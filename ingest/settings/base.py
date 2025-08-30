@@ -39,6 +39,7 @@ THIRD_PARTY_APPS = [
     'simple_history',
     'mptt',
     'storages',
+    'django_celery_beat',
 ]
 
 LOCAL_APPS = [

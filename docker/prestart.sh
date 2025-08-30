@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+echo "Creating database migrations..."
+python manage.py makemigrations accounts masterdata documents syncbridge embeddings audit
+
 echo "Running database migrations..."
 python manage.py migrate
 
