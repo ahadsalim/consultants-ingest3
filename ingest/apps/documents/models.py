@@ -158,7 +158,7 @@ class LegalUnit(MPTTModel, BaseModel):
     path_label = models.CharField(max_length=500, blank=True, verbose_name='مسیر کامل')
     content = models.TextField(verbose_name='محتوا')
     
-    history = HistoricalRecords()
+    history = HistoricalRecords(excluded_fields=['lft', 'rght', 'tree_id', 'level'])
 
     class MPTTMeta:
         order_insertion_by = ['order_index']

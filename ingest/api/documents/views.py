@@ -20,6 +20,7 @@ from .serializers import (
     destroy=extend_schema(summary="Delete legal document", tags=["Documents"]),
 )
 class LegalDocumentViewSet(viewsets.ModelViewSet):
+    queryset = LegalDocument.objects.all()
     serializer_class = LegalDocumentSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
@@ -67,6 +68,7 @@ class LegalDocumentViewSet(viewsets.ModelViewSet):
     destroy=extend_schema(summary="Delete legal unit", tags=["Documents"]),
 )
 class LegalUnitViewSet(viewsets.ModelViewSet):
+    queryset = LegalUnit.objects.all()
     serializer_class = LegalUnitSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
@@ -97,6 +99,7 @@ class LegalUnitViewSet(viewsets.ModelViewSet):
     destroy=extend_schema(summary="Delete file asset", tags=["Documents"]),
 )
 class FileAssetViewSet(viewsets.ModelViewSet):
+    queryset = FileAsset.objects.all()
     serializer_class = FileAssetSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
@@ -130,6 +133,7 @@ class FileAssetViewSet(viewsets.ModelViewSet):
     destroy=extend_schema(summary="Delete QA entry", tags=["Documents"]),
 )
 class QAEntryViewSet(viewsets.ModelViewSet):
+    queryset = QAEntry.objects.all()
     serializer_class = QAEntrySerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]

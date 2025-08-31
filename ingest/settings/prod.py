@@ -19,9 +19,6 @@ SECURE_HSTS_PRELOAD = True
 # Database connection pooling for production
 DATABASES['default'].update({
     'CONN_MAX_AGE': 60,
-    'OPTIONS': {
-        'MAX_CONNS': 20,
-    }
 })
 
 # Static files
@@ -38,12 +35,5 @@ EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
 # MinIO settings for production
 AWS_S3_USE_SSL = os.getenv('MINIO_USE_SSL', 'True').lower() == 'true'
 
-# Logging for production
-LOGGING['handlers']['file'] = {
-    'class': 'logging.FileHandler',
-    'filename': '/var/log/ingest/django.log',
-    'formatter': 'verbose',
-}
-LOGGING['root']['handlers'].append('file')
-LOGGING['loggers']['django']['handlers'].append('file')
-LOGGING['loggers']['ingest']['handlers'].append('file')
+# Logging for production (console only for Docker)
+# File logging removed to avoid permission issues in containers
