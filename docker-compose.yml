@@ -58,6 +58,8 @@ services:
     command: celery -A ingest worker --loglevel=info --concurrency=2
     volumes:
       - .:/app
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
     environment:
       - DJANGO_SETTINGS_MODULE=ingest.settings.prod
     env_file:
@@ -72,6 +74,8 @@ services:
     command: celery -A ingest beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
     volumes:
       - .:/app
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
     environment:
       - DJANGO_SETTINGS_MODULE=ingest.settings.prod
     env_file:

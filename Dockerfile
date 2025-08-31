@@ -24,9 +24,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy project
 COPY . .
 
-# Create staticfiles directory
-RUN mkdir -p /app/staticfiles
-
 # Copy entrypoint script
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
@@ -38,6 +35,12 @@ RUN chmod +x /prestart.sh
 # Create non-root user
 RUN adduser --disabled-password --gecos '' appuser
 RUN chown -R appuser:appuser /app
+
+# Create staticfiles directory with proper permissions
+RUN mkdir -p /app/staticfiles
+RUN chown -R appuser:appuser /app/staticfiles
+RUN chmod -R 755 /app/staticfiles
+
 USER appuser
 
 # Expose port
