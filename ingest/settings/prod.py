@@ -8,8 +8,11 @@ DEBUG = False
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost').split(',')
 
 # Security settings
-SECURE_SSL_REDIRECT = True
+FORCE_INSECURE_HTTP = os.getenv('FORCE_INSECURE_HTTP', 'false').lower() == 'true'
+SECURE_SSL_REDIRECT = False if FORCE_INSECURE_HTTP else True
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
 SECURE_HSTS_SECONDS = 31536000
@@ -23,6 +26,13 @@ DATABASES['default'].update({
 
 # Static files
 STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
+
+# Force Django to serve static files in production
+STATIC_URL = '/static/'
+STATIC_ROOT = '/app/staticfiles'
+
+# Whitenoise for static files serving
+MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
 
 # Email settings
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'

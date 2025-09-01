@@ -13,6 +13,10 @@ from .enums import DocumentType, DocumentStatus, RelationType, UnitType, QAStatu
 
 class LegalDocument(BaseModel):
     """Legal document model with full lifecycle management."""
+    
+    class Meta:
+        verbose_name = "سند حقوقی"
+        verbose_name_plural = "📄 اسناد حقوقی"
     title = models.CharField(max_length=500, verbose_name='عنوان')
     reference_no = models.CharField(max_length=100, blank=True, verbose_name='شماره مرجع')
     doc_type = models.CharField(

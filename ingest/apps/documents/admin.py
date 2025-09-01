@@ -7,6 +7,7 @@ from mptt.admin import MPTTModelAdmin
 
 from .models import LegalDocument, DocumentRelation, LegalUnit, FileAsset, QAEntry
 from .enums import DocumentStatus, QAStatus
+from ingest.admin import admin_site
 
 
 class DocumentRelationInline(admin.TabularInline):
@@ -29,6 +30,8 @@ class FileAssetInline(admin.TabularInline):
 
 @admin.register(LegalDocument)
 class LegalDocumentAdmin(SimpleHistoryAdmin):
+    verbose_name = "سند حقوقی"
+    verbose_name_plural = "📄 اسناد حقوقی"
     list_display = ('title', 'doc_type', 'jurisdiction', 'authority', 'status_badge', 'created_by', 'created_at')
     list_filter = ('status', 'doc_type', 'jurisdiction', 'authority', 'created_at')
     search_fields = ('title', 'reference_no', 'created_by__username')
@@ -291,3 +294,11 @@ class QAEntryAdmin(SimpleHistoryAdmin):
                 count += 1
         self.message_user(request, f'{count} پرسش و پاسخ رد شد.')
     reject_qa_entries.short_description = 'رد پرسش و پاسخ‌ها'
+
+
+# Register models with custom admin site
+admin_site.register(LegalDocument, LegalDocumentAdmin)
+admin_site.register(DocumentRelation, DocumentRelationAdmin)
+admin_site.register(LegalUnit, LegalUnitAdmin)
+admin_site.register(FileAsset, FileAssetAdmin)
+admin_site.register(QAEntry, QAEntryAdmin)

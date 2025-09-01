@@ -49,9 +49,13 @@ LOCAL_APPS = [
     'ingest.apps.syncbridge',
     'ingest.apps.embeddings',
     'ingest.apps.audit',
+    'ingest',
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
+
+# Custom admin site
+ADMIN_SITE_HEADER = 'سیستم مدیریت اسناد حقوقی'
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -121,6 +125,15 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+# Additional static files directories
+STATICFILES_DIRS = []
+
+# Static files finders
+STATICFILES_FINDERS = [
+    'django.contrib.staticfiles.finders.FileSystemFinder',
+    'django.contrib.staticfiles.finders.AppDirectoriesFinder',
+]
 
 # Media files
 MEDIA_URL = '/media/'

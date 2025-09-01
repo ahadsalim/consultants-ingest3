@@ -2,9 +2,9 @@ from django.contrib import admin
 from django.utils.html import format_html
 from simple_history.admin import SimpleHistoryAdmin
 from .models import SyncJob, SyncJobStatus
+from ingest.admin import admin_site
 
 
-@admin.register(SyncJob)
 class SyncJobAdmin(SimpleHistoryAdmin):
     list_display = ('job_type', 'target_id', 'status_badge', 'retry_count', 'created_at', 'completed_at')
     list_filter = ('status', 'job_type', 'created_at')
@@ -51,3 +51,7 @@ class SyncJobAdmin(SimpleHistoryAdmin):
             count += 1
         self.message_user(request, f'{count} کار بازنشانی شد.')
     reset_jobs.short_description = 'بازنشانی کارها'
+
+
+# Register models with custom admin site
+admin_site.register(SyncJob, SyncJobAdmin)
