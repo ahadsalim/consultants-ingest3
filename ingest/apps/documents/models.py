@@ -11,6 +11,108 @@ from ingest.apps.masterdata.models import BaseModel, Jurisdiction, IssuingAuthor
 from .enums import DocumentType, DocumentStatus, RelationType, UnitType, QAStatus
 
 
+# FRBR Core Models - New Schema
+class InstrumentWork(BaseModel):
+    """FRBR Work level - abstract legal instrument concept."""
+    
+    class Meta:
+        verbose_name = "اثر حقوقی"
+        verbose_name_plural = "آثار حقوقی"
+        
+    title_official = models.CharField(max_length=500, verbose_name='عنوان رسمی')
+    doc_type = models.CharField(
+        max_length=20, 
+        choices=DocumentType.choices, 
+        default=DocumentType.LAW,
+        verbose_name='نوع سند'
+    )
+    jurisdiction = models.ForeignKey(
+        Jurisdiction, 
+        on_delete=models.CASCADE, 
+        related_name='instrument_works',
+        verbose_name='حوزه قضایی'
+    )
+    authority = models.ForeignKey(
+        IssuingAuthority, 
+        on_delete=models.CASCADE, 
+        related_name='instrument_works',
+        verbose_name='مرجع صادرکننده'
+    )
+    eli_uri_work = models.URLField(blank=True, verbose_name='ELI URI اثر')
+    urn_lex = models.CharField(max_length=200, blank=True, verbose_name='URN LEX')
+    local_slug = models.SlugField(max_length=100, unique=True, verbose_name='شناسه محلی')
+    primary_language = models.CharField(max_length=10, default='fa', verbose_name='زبان اصلی')
+    subject_summary = models.TextField(blank=True, verbose_name='خلاصه موضوع')
+    
+    history = HistoricalRecords()
+    
+    def __str__(self):
+        return f"{self.title_official} ({self.get_doc_type_display()})"
+
+
+class InstrumentExpression(BaseModel):
+    """FRBR Expression level - specific language/version of a work."""
+    
+    class Meta:
+        verbose_name = "بیان حقوقی"
+        verbose_name_plural = "بیان‌های حقوقی"
+        unique_together = ['work', 'language', 'consolidation_level', 'expression_date']
+        
+    work = models.ForeignKey(
+        InstrumentWork,
+        on_delete=models.CASCADE,
+        related_name='expressions',
+        verbose_name='اثر'
+    )
+    language = models.CharField(max_length=10, default='fa', verbose_name='زبان')
+    consolidation_level = models.CharField(max_length=50, blank=True, verbose_name='سطح تلفیق')
+    expression_date = models.DateField(verbose_name='تاریخ بیان')
+    eli_uri_expr = models.URLField(blank=True, verbose_name='ELI URI بیان')
+    
+    history = HistoricalRecords()
+    
+    def __str__(self):
+        return f"{self.work.title_official} - {self.language} ({self.expression_date})"
+
+
+class InstrumentManifestation(BaseModel):
+    """FRBR Manifestation level - physical/digital embodiment."""
+    
+    class Meta:
+        verbose_name = "تجلی حقوقی"
+        verbose_name_plural = "تجلی‌های حقوقی"
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(in_force_to__gte=models.F('in_force_from')) | models.Q(in_force_to__isnull=True),
+                name='valid_in_force_period'
+            )
+        ]
+        
+    expr = models.ForeignKey(
+        InstrumentExpression,
+        on_delete=models.CASCADE,
+        related_name='manifestations',
+        verbose_name='بیان'
+    )
+    publication_date = models.DateField(verbose_name='تاریخ انتشار')
+    official_gazette_name = models.CharField(max_length=200, blank=True, verbose_name='نام روزنامه رسمی')
+    gazette_issue_no = models.CharField(max_length=50, blank=True, verbose_name='شماره نشریه')
+    page_start = models.PositiveIntegerField(null=True, blank=True, verbose_name='صفحه شروع')
+    page_end = models.PositiveIntegerField(null=True, blank=True, verbose_name='صفحه پایان')
+    source_url = models.URLField(blank=True, verbose_name='URL منبع')
+    checksum_sha256 = models.CharField(max_length=64, unique=True, blank=True, verbose_name='چکسام SHA256')
+    eli_uri_manifestation = models.URLField(blank=True, verbose_name='ELI URI تجلی')
+    in_force_from = models.DateField(null=True, blank=True, verbose_name='اجرا از تاریخ')
+    in_force_to = models.DateField(null=True, blank=True, verbose_name='اجرا تا تاریخ')
+    repeal_status = models.CharField(max_length=50, blank=True, verbose_name='وضعیت لغو')
+    retrieval_date = models.DateTimeField(auto_now_add=True, verbose_name='تاریخ بازیابی')
+    
+    history = HistoricalRecords()
+    
+    def __str__(self):
+        return f"{self.expr.work.title_official} - {self.publication_date}"
+
+
 class LegalDocument(BaseModel):
     """Legal document model with full lifecycle management."""
     

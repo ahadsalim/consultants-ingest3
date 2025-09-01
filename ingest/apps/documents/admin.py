@@ -5,7 +5,10 @@ from django.contrib.auth.models import Group
 from simple_history.admin import SimpleHistoryAdmin
 from mptt.admin import MPTTModelAdmin
 
-from .models import LegalDocument, DocumentRelation, LegalUnit, FileAsset, QAEntry
+from .models import (
+    LegalDocument, DocumentRelation, LegalUnit, FileAsset, QAEntry,
+    InstrumentWork, InstrumentExpression, InstrumentManifestation
+)
 from .enums import DocumentStatus, QAStatus
 from ingest.admin import admin_site
 
@@ -296,7 +299,33 @@ class QAEntryAdmin(SimpleHistoryAdmin):
     reject_qa_entries.short_description = 'رد پرسش و پاسخ‌ها'
 
 
-# Register models with custom admin site
+# FRBR Core Model Admins
+@admin.register(InstrumentWork, site=admin_site)
+class InstrumentWorkAdmin(SimpleHistoryAdmin):
+    list_display = ('title_official', 'doc_type', 'jurisdiction', 'authority', 'local_slug', 'created_at')
+    list_filter = ('doc_type', 'jurisdiction', 'authority', 'created_at')
+    search_fields = ('title_official', 'local_slug', 'subject_summary')
+    prepopulated_fields = {'local_slug': ('title_official',)}
+    readonly_fields = ('id', 'created_at', 'updated_at')
+
+
+@admin.register(InstrumentExpression, site=admin_site)
+class InstrumentExpressionAdmin(SimpleHistoryAdmin):
+    list_display = ('work', 'language', 'expression_date', 'consolidation_level', 'created_at')
+    list_filter = ('language', 'expression_date', 'created_at')
+    search_fields = ('work__title_official', 'eli_uri_expr')
+    readonly_fields = ('id', 'created_at', 'updated_at')
+
+
+@admin.register(InstrumentManifestation, site=admin_site)
+class InstrumentManifestationAdmin(SimpleHistoryAdmin):
+    list_display = ('expr', 'publication_date', 'official_gazette_name', 'in_force_from', 'in_force_to')
+    list_filter = ('publication_date', 'in_force_from', 'repeal_status', 'created_at')
+    search_fields = ('expr__work__title_official', 'official_gazette_name', 'gazette_issue_no')
+    readonly_fields = ('id', 'checksum_sha256', 'retrieval_date', 'created_at', 'updated_at')
+
+
+# Register all models with custom admin site
 admin_site.register(LegalDocument, LegalDocumentAdmin)
 admin_site.register(DocumentRelation, DocumentRelationAdmin)
 admin_site.register(LegalUnit, LegalUnitAdmin)
