@@ -490,6 +490,258 @@ class PinpointCitation(BaseModel):
         return f"{self.from_unit.path_label} → {self.to_unit.path_label}"
 
 
+# Tagging Models
+
+class Tag(BaseModel):
+    """Tags for categorizing works and units."""
+    name = models.CharField(max_length=100, unique=True, verbose_name='نام')
+    slug = models.SlugField(max_length=100, unique=True, verbose_name='نامک')
+    description = models.TextField(blank=True, verbose_name='توضیحات')
+    color = models.CharField(max_length=7, default='#6B7280', verbose_name='رنگ')  # Hex color
+    category = models.CharField(
+        max_length=20,
+        choices=[
+            ('subject', 'موضوعی'),
+            ('procedural', 'رویه‌ای'),
+            ('status', 'وضعیت'),
+            ('priority', 'اولویت'),
+            ('source', 'منبع'),
+            ('custom', 'سفارشی'),
+        ],
+        default='custom',
+        verbose_name='دسته‌بندی'
+    )
+    
+    history = HistoricalRecords()
+
+    class Meta:
+        verbose_name = 'برچسب'
+        verbose_name_plural = 'برچسب‌ها'
+        ordering = ['category', 'name']
+
+    def __str__(self):
+        return self.name
+
+
+class WorkTag(BaseModel):
+    """Many-to-many through model for Work-Tag relationships."""
+    work = models.ForeignKey(
+        'InstrumentWork',
+        on_delete=models.CASCADE,
+        related_name='work_tags',
+        verbose_name='اثر'
+    )
+    tag = models.ForeignKey(
+        'Tag',
+        on_delete=models.CASCADE,
+        related_name='work_tags',
+        verbose_name='برچسب'
+    )
+    relevance_score = models.FloatField(
+        default=1.0,
+        help_text='امتیاز ارتباط (0.0 تا 1.0)',
+        verbose_name='امتیاز ارتباط'
+    )
+    notes = models.TextField(blank=True, verbose_name='یادداشت‌ها')
+    tagged_by = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='work_taggings',
+        verbose_name='برچسب‌زن'
+    )
+    
+    history = HistoricalRecords()
+
+    class Meta:
+        verbose_name = 'برچسب اثر'
+        verbose_name_plural = 'برچسب‌های اثر'
+        unique_together = ['work', 'tag']
+
+    def __str__(self):
+        return f"{self.work.title_official} - {self.tag.name}"
+
+
+class UnitTag(BaseModel):
+    """Many-to-many through model for Unit-Tag relationships."""
+    unit = models.ForeignKey(
+        'LegalUnit',
+        on_delete=models.CASCADE,
+        related_name='unit_tags',
+        verbose_name='واحد'
+    )
+    tag = models.ForeignKey(
+        'Tag',
+        on_delete=models.CASCADE,
+        related_name='unit_tags',
+        verbose_name='برچسب'
+    )
+    relevance_score = models.FloatField(
+        default=1.0,
+        help_text='امتیاز ارتباط (0.0 تا 1.0)',
+        verbose_name='امتیاز ارتباط'
+    )
+    notes = models.TextField(blank=True, verbose_name='یادداشت‌ها')
+    tagged_by = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='unit_taggings',
+        verbose_name='برچسب‌زن'
+    )
+    
+    history = HistoricalRecords()
+
+    class Meta:
+        verbose_name = 'برچسب واحد'
+        verbose_name_plural = 'برچسب‌های واحد'
+        unique_together = ['unit', 'tag']
+
+    def __str__(self):
+        return f"{self.unit.path_label} - {self.tag.name}"
+
+
+# Ingest and RAG Models
+
+class IngestLog(BaseModel):
+    """Log of data ingestion operations."""
+    operation_type = models.CharField(
+        max_length=20,
+        choices=[
+            ('create', 'ایجاد'),
+            ('update', 'به‌روزرسانی'),
+            ('delete', 'حذف'),
+            ('bulk_import', 'واردات انبوه'),
+            ('sync', 'همگام‌سازی'),
+        ],
+        verbose_name='نوع عملیات'
+    )
+    source_system = models.CharField(max_length=50, verbose_name='سیستم مبدأ')
+    source_id = models.CharField(max_length=100, blank=True, verbose_name='شناسه مبدأ')
+    
+    # Target object references
+    target_work = models.ForeignKey(
+        'InstrumentWork',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ingest_logs',
+        verbose_name='اثر هدف'
+    )
+    target_expression = models.ForeignKey(
+        'InstrumentExpression',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ingest_logs',
+        verbose_name='بیان هدف'
+    )
+    target_manifestation = models.ForeignKey(
+        'InstrumentManifestation',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ingest_logs',
+        verbose_name='تجلی هدف'
+    )
+    
+    # Operation details
+    status = models.CharField(
+        max_length=20,
+        choices=[
+            ('pending', 'در انتظار'),
+            ('processing', 'در حال پردازش'),
+            ('success', 'موفق'),
+            ('failed', 'ناموفق'),
+            ('partial', 'جزئی'),
+        ],
+        default='pending',
+        verbose_name='وضعیت'
+    )
+    records_processed = models.PositiveIntegerField(default=0, verbose_name='رکوردهای پردازش‌شده')
+    records_failed = models.PositiveIntegerField(default=0, verbose_name='رکوردهای ناموفق')
+    error_message = models.TextField(blank=True, verbose_name='پیام خطا')
+    metadata = models.JSONField(default=dict, blank=True, verbose_name='متادیتا')
+    
+    started_by = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='started_ingests',
+        verbose_name='آغازکننده'
+    )
+    completed_at = models.DateTimeField(null=True, blank=True, verbose_name='زمان تکمیل')
+    
+    history = HistoricalRecords()
+
+    class Meta:
+        verbose_name = 'گزارش ورود داده'
+        verbose_name_plural = 'گزارش‌های ورود داده'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.get_operation_type_display()} - {self.source_system} ({self.get_status_display()})"
+
+
+class RAGChunk(BaseModel):
+    """Text chunks for Retrieval-Augmented Generation."""
+    # Source references
+    source_unit = models.ForeignKey(
+        'LegalUnit',
+        on_delete=models.CASCADE,
+        related_name='rag_chunks',
+        verbose_name='واحد مبدأ'
+    )
+    source_manifestation = models.ForeignKey(
+        'InstrumentManifestation',
+        on_delete=models.CASCADE,
+        related_name='rag_chunks',
+        verbose_name='تجلی مبدأ'
+    )
+    
+    # Chunk content
+    chunk_text = models.TextField(verbose_name='متن بخش')
+    chunk_index = models.PositiveIntegerField(verbose_name='شماره بخش')
+    start_offset = models.PositiveIntegerField(verbose_name='آفست شروع')
+    end_offset = models.PositiveIntegerField(verbose_name='آفست پایان')
+    
+    # Embeddings and metadata
+    embedding_model = models.CharField(max_length=100, verbose_name='مدل تعبیه')
+    embedding_vector = models.JSONField(null=True, blank=True, verbose_name='بردار تعبیه')
+    chunk_type = models.CharField(
+        max_length=20,
+        choices=[
+            ('paragraph', 'پاراگراف'),
+            ('sentence', 'جمله'),
+            ('article', 'ماده'),
+            ('section', 'بخش'),
+            ('custom', 'سفارشی'),
+        ],
+        default='paragraph',
+        verbose_name='نوع بخش'
+    )
+    
+    # Quality metrics
+    token_count = models.PositiveIntegerField(verbose_name='تعداد توکن')
+    quality_score = models.FloatField(
+        default=1.0,
+        help_text='امتیاز کیفیت (0.0 تا 1.0)',
+        verbose_name='امتیاز کیفیت'
+    )
+    
+    # Processing metadata
+    processed_at = models.DateTimeField(auto_now_add=True, verbose_name='زمان پردازش')
+    processor_version = models.CharField(max_length=50, verbose_name='نسخه پردازشگر')
+    
+    history = HistoricalRecords()
+
+    class Meta:
+        verbose_name = 'بخش RAG'
+        verbose_name_plural = 'بخش‌های RAG'
+        ordering = ['source_unit', 'chunk_index']
+        unique_together = ['source_unit', 'chunk_index']
+
+    def __str__(self):
+        return f"{self.source_unit.path_label} - بخش {self.chunk_index}"
+
+
 class QAEntry(BaseModel):
     """Question and Answer entries for legal content."""
     question = models.TextField(verbose_name='سؤال')

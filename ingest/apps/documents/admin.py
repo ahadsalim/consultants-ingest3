@@ -8,7 +8,8 @@ from mptt.admin import MPTTModelAdmin
 from .models import (
     LegalDocument, DocumentRelation, LegalUnit, FileAsset, QAEntry,
     InstrumentWork, InstrumentExpression, InstrumentManifestation,
-    InstrumentRelation, PinpointCitation
+    InstrumentRelation, PinpointCitation, Tag, WorkTag, UnitTag,
+    IngestLog, RAGChunk
 )
 from .enums import DocumentStatus, QAStatus
 from ingest.admin import admin_site
@@ -397,6 +398,88 @@ class PinpointCitationAdmin(SimpleHistoryAdmin):
     list_filter = ('citation_type', 'created_at')
     search_fields = ('from_unit__label', 'to_unit__label', 'context_text')
     readonly_fields = ('id', 'created_at', 'updated_at')
+
+
+# Tagging Admins
+@admin.register(Tag, site=admin_site)
+class TagAdmin(SimpleHistoryAdmin):
+    list_display = ('name', 'category', 'color_display', 'created_at')
+    list_filter = ('category', 'created_at')
+    search_fields = ('name', 'description')
+    prepopulated_fields = {'slug': ('name',)}
+    readonly_fields = ('id', 'created_at', 'updated_at')
+    
+    def color_display(self, obj):
+        return format_html(
+            '<span style="background-color: {}; padding: 2px 8px; border-radius: 3px; color: white;">{}</span>',
+            obj.color, obj.color
+        )
+    color_display.short_description = 'رنگ'
+
+
+@admin.register(WorkTag, site=admin_site)
+class WorkTagAdmin(SimpleHistoryAdmin):
+    list_display = ('work', 'tag', 'relevance_score', 'tagged_by', 'created_at')
+    list_filter = ('tag__category', 'relevance_score', 'created_at')
+    search_fields = ('work__title_official', 'tag__name', 'notes')
+    readonly_fields = ('id', 'created_at', 'updated_at')
+
+
+@admin.register(UnitTag, site=admin_site)
+class UnitTagAdmin(SimpleHistoryAdmin):
+    list_display = ('unit', 'tag', 'relevance_score', 'tagged_by', 'created_at')
+    list_filter = ('tag__category', 'relevance_score', 'created_at')
+    search_fields = ('unit__label', 'tag__name', 'notes')
+    readonly_fields = ('id', 'created_at', 'updated_at')
+
+
+# Ingest and RAG Admins
+@admin.register(IngestLog, site=admin_site)
+class IngestLogAdmin(SimpleHistoryAdmin):
+    list_display = ('operation_type', 'source_system', 'status', 'records_processed', 'started_by', 'created_at')
+    list_filter = ('operation_type', 'status', 'source_system', 'created_at')
+    search_fields = ('source_system', 'source_id', 'error_message')
+    readonly_fields = ('id', 'created_at', 'updated_at', 'completed_at')
+    fieldsets = (
+        ('اطلاعات عملیات', {
+            'fields': ('operation_type', 'source_system', 'source_id', 'status')
+        }),
+        ('اهداف', {
+            'fields': ('target_work', 'target_expression', 'target_manifestation'),
+            'classes': ('collapse',)
+        }),
+        ('نتایج', {
+            'fields': ('records_processed', 'records_failed', 'error_message', 'metadata')
+        }),
+        ('اطلاعات سیستم', {
+            'fields': ('started_by', 'created_at', 'completed_at', 'updated_at'),
+            'classes': ('collapse',)
+        })
+    )
+
+
+@admin.register(RAGChunk, site=admin_site)
+class RAGChunkAdmin(SimpleHistoryAdmin):
+    list_display = ('source_unit', 'chunk_index', 'chunk_type', 'token_count', 'quality_score', 'processed_at')
+    list_filter = ('chunk_type', 'embedding_model', 'quality_score', 'processed_at')
+    search_fields = ('source_unit__label', 'chunk_text')
+    readonly_fields = ('id', 'processed_at', 'created_at', 'updated_at')
+    fieldsets = (
+        ('مرجع', {
+            'fields': ('source_unit', 'source_manifestation')
+        }),
+        ('محتوای بخش', {
+            'fields': ('chunk_text', 'chunk_index', 'start_offset', 'end_offset', 'chunk_type')
+        }),
+        ('تعبیه و کیفیت', {
+            'fields': ('embedding_model', 'embedding_vector', 'token_count', 'quality_score'),
+            'classes': ('collapse',)
+        }),
+        ('اطلاعات پردازش', {
+            'fields': ('processor_version', 'processed_at', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        })
+    )
 
 
 # Register all models with custom admin site
