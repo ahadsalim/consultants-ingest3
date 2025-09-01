@@ -482,9 +482,5 @@ class RAGChunkAdmin(SimpleHistoryAdmin):
     )
 
 
-# Register all models with custom admin site
-admin_site.register(LegalDocument, LegalDocumentAdmin)
-admin_site.register(DocumentRelation, DocumentRelationAdmin)
-admin_site.register(LegalUnit, LegalUnitAdmin)
-admin_site.register(FileAsset, FileAssetAdmin)
-admin_site.register(QAEntry, QAEntryAdmin)
+# Note: All models are registered using @admin.register decorators above
+# No need for additional admin_site.register() calls
