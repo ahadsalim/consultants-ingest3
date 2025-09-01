@@ -23,43 +23,55 @@ A production-ready Django 5 application for managing legal documents with hierar
 - **Documentation**: OpenAPI/Swagger
 - **Deployment**: Docker Compose
 
-## Quick Start
+## Deploy (External MinIO)
 
-### 1. Clone and Setup
+### 1. Interactive Deployment
 
 ```bash
 cd ingest3
-cp .env.example .env
-# Edit .env with your configuration
+chmod +x deploy.sh
+./deploy.sh
 ```
 
-### 2. Start Services
+The deploy script will prompt for:
+- **PostgreSQL**: Host, Port, Database, User, Password
+- **Django**: Secret Key, Allowed Hosts
+- **MinIO**: Endpoint URL, Access Key, Secret Key, Bucket Name
+
+### 2. Manual Setup
 
 ```bash
-docker-compose up -d
-```
+# Copy environment template
+cp .env.example .env
+# Edit .env with your configuration
 
-This will start:
-- PostgreSQL database with pgvector
-- MinIO for file storage
-- Redis for caching/queues
-- Django web application
-- Celery worker and beat scheduler
+# Start services (database + web only)
+docker-compose up -d --build
+
+# Run migrations
+docker-compose exec web python manage.py migrate
+
+# Create superuser
+docker-compose exec web python manage.py createsuperuser
+
+# Collect static files
+docker-compose exec web python manage.py collectstatic --noinput
+```
 
 ### 3. Access the Application
 
-- **Admin Interface**: http://localhost:8000/admin/
-- **API Documentation**: http://localhost:8000/api/schema/swagger-ui/
-- **MinIO Console**: http://localhost:9001/
+- **Admin Interface**: http://localhost:8001/admin/
+- **API Documentation**: http://localhost:8001/api/schema/swagger-ui/
+- **Health Check**: http://localhost:8001/api/health/
 
-Default superuser credentials:
-- Username: `admin`
-- Password: `admin123`
-
-### 4. Create Sample Data
+### 4. Process Sync Jobs
 
 ```bash
-docker-compose exec web python manage.py seed_data
+# Process pending sync jobs manually
+docker-compose exec web python manage.py process_syncjobs
+
+# Dry run to see what would be processed
+docker-compose exec web python manage.py process_syncjobs --dry-run
 ```
 
 ## User Roles

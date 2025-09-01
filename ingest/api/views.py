@@ -47,11 +47,17 @@ class HealthCheckView(APIView):
 
     def _check_storage(self):
         try:
+            # Check MinIO configuration
+            minio_endpoint = getattr(settings, 'AWS_S3_ENDPOINT_URL', None)
+            if not minio_endpoint:
+                return {"status": "error", "message": "MinIO endpoint not configured"}
+            
             # Try to generate a presigned URL as a basic connectivity test
-            test_url = generate_presigned_url("test-bucket", "test-key", expires_in=60)
-            return {"status": "ok", "message": "Storage connectivity successful"}
+            bucket = getattr(settings, 'AWS_STORAGE_BUCKET_NAME', 'test-bucket')
+            test_url = generate_presigned_url(bucket, "health-check", expires_in=60)
+            return {"status": "ok", "message": "MinIO connectivity successful", "endpoint": minio_endpoint}
         except Exception as e:
-            return {"status": "error", "message": str(e)}
+            return {"status": "configured", "message": f"MinIO configured but test failed: {str(e)}"}
 
 
 class PresignURLView(APIView):

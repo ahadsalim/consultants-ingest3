@@ -27,39 +27,103 @@ print_header() {
     echo -e "${BLUE}================================${NC}"
 }
 
-# Check if .env file exists
-if [ ! -f .env ]; then
-    print_warning ".env file not found. Creating from .env.example..."
-    cp .env.example .env
-    print_status ".env file created. Please review and update the configuration."
-fi
-
-# Load environment variables
-source .env
-
-print_header "Ingest System Deployment"
-
-# Get MinIO server address
-print_status "Configuring MinIO connection..."
-echo -n "Enter MinIO server address (press Enter for localhost): "
-read MINIO_SERVER
-
-if [ -z "$MINIO_SERVER" ]; then
-    MINIO_SERVER="localhost"
-    print_status "Using localhost for MinIO server"
-else
-    print_status "Using MinIO server: $MINIO_SERVER"
+# Function to prompt for configuration
+prompt_config() {
+    local key=$1
+    local prompt_text=$2
+    local default_value=$3
+    local current_value=""
     
-    # Update .env file with external MinIO server
-    sed -i "s|MINIO_ENDPOINT=.*|MINIO_ENDPOINT=http://$MINIO_SERVER:9000|g" .env
-    print_status "Updated .env with MinIO server address"
+    # Check if .env exists and get current value
+    if [ -f .env ]; then
+        current_value=$(grep "^$key=" .env 2>/dev/null | cut -d'=' -f2- | tr -d '"' || echo "")
+    fi
+    
+    if [ -n "$current_value" ]; then
+        echo -n "$prompt_text [current: $current_value]: "
+    else
+        echo -n "$prompt_text [default: $default_value]: "
+    fi
+    
+    read user_input
+    
+    if [ -z "$user_input" ]; then
+        if [ -n "$current_value" ]; then
+            echo "$current_value"
+        else
+            echo "$default_value"
+        fi
+    else
+        echo "$user_input"
+    fi
+}
+
+print_header "Ingest System Configuration"
+
+# Create or update .env file
+if [ -f .env ]; then
+    print_warning ".env file exists. Will update with new values."
+else
+    print_status "Creating new .env file..."
+    touch .env
 fi
+
+# Collect configuration
+POSTGRES_HOST=$(prompt_config "POSTGRES_HOST" "PostgreSQL Host" "localhost")
+POSTGRES_PORT=$(prompt_config "POSTGRES_PORT" "PostgreSQL Port" "5434")
+POSTGRES_DB=$(prompt_config "POSTGRES_DB" "PostgreSQL Database" "ingest")
+POSTGRES_USER=$(prompt_config "POSTGRES_USER" "PostgreSQL User" "ingest")
+POSTGRES_PASSWORD=$(prompt_config "POSTGRES_PASSWORD" "PostgreSQL Password" "ingest123")
+
+DJANGO_SECRET_KEY=$(prompt_config "DJANGO_SECRET_KEY" "Django Secret Key" "$(openssl rand -base64 32 2>/dev/null || echo 'change-me-in-production')")
+ALLOWED_HOSTS=$(prompt_config "ALLOWED_HOSTS" "Allowed Hosts (comma-separated)" "localhost,127.0.0.1")
+
+MINIO_ENDPOINT=$(prompt_config "MINIO_ENDPOINT" "MinIO Endpoint URL" "http://localhost:9000")
+MINIO_ACCESS_KEY=$(prompt_config "MINIO_ACCESS_KEY" "MinIO Access Key" "minioadmin")
+MINIO_SECRET_KEY=$(prompt_config "MINIO_SECRET_KEY" "MinIO Secret Key" "minioadmin")
+MINIO_BUCKET_PRIVATE=$(prompt_config "MINIO_BUCKET_PRIVATE" "MinIO Private Bucket Name" "ingest-private")
+
+# Write .env file
+print_status "Writing configuration to .env..."
+cat > .env << EOF
+# Database Configuration
+POSTGRES_HOST=$POSTGRES_HOST
+POSTGRES_PORT=$POSTGRES_PORT
+POSTGRES_DB=$POSTGRES_DB
+POSTGRES_USER=$POSTGRES_USER
+POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+
+# Django Configuration
+DJANGO_SECRET_KEY=$DJANGO_SECRET_KEY
+ALLOWED_HOSTS=$ALLOWED_HOSTS
+DEBUG=false
+
+# MinIO Configuration (External)
+MINIO_ENDPOINT=$MINIO_ENDPOINT
+MINIO_ACCESS_KEY=$MINIO_ACCESS_KEY
+MINIO_SECRET_KEY=$MINIO_SECRET_KEY
+MINIO_BUCKET_PRIVATE=$MINIO_BUCKET_PRIVATE
+
+# Port Configuration
+WEB_PORT=8001
+DB_PORT=5434
+EOF
 
 # Check if MinIO is external (not localhost)
 IS_EXTERNAL_MINIO=false
-if [ "$MINIO_SERVER" != "localhost" ] && [ "$MINIO_SERVER" != "127.0.0.1" ]; then
+if [[ "$MINIO_ENDPOINT" != *"localhost"* ]] && [[ "$MINIO_ENDPOINT" != *"127.0.0.1"* ]]; then
     IS_EXTERNAL_MINIO=true
     print_status "External MinIO detected. Will skip MinIO container deployment."
+fi
+
+# Test MinIO connectivity
+if [ "$IS_EXTERNAL_MINIO" = true ]; then
+    print_status "Testing MinIO connectivity..."
+    if curl -s -o /dev/null -w "%{http_code}" "$MINIO_ENDPOINT/minio/health/live" | grep -q "200"; then
+        print_status "✅ MinIO endpoint is accessible"
+    else
+        print_warning "⚠️ MinIO health check failed - endpoint may be behind proxy"
+    fi
 fi
 
 # Create docker-compose override for external MinIO
