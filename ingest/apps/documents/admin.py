@@ -7,7 +7,8 @@ from mptt.admin import MPTTModelAdmin
 
 from .models import (
     LegalDocument, DocumentRelation, LegalUnit, FileAsset, QAEntry,
-    InstrumentWork, InstrumentExpression, InstrumentManifestation
+    InstrumentWork, InstrumentExpression, InstrumentManifestation,
+    InstrumentRelation, PinpointCitation
 )
 from .enums import DocumentStatus, QAStatus
 from ingest.admin import admin_site
@@ -163,11 +164,40 @@ class DocumentRelationAdmin(SimpleHistoryAdmin):
 
 @admin.register(LegalUnit)
 class LegalUnitAdmin(MPTTModelAdmin, SimpleHistoryAdmin):
-    list_display = ('label', 'document', 'unit_type', 'parent', 'order_index', 'created_at')
-    list_filter = ('unit_type', 'document__status', 'created_at')
-    search_fields = ('label', 'content', 'document__title')
-    readonly_fields = ('id', 'path_label', 'created_at', 'updated_at')
+    list_display = ('label', 'unit_type', 'get_source_ref', 'parent', 'order_index')
+    list_filter = ('unit_type', 'document', 'work', 'expr')
+    search_fields = ('label', 'content', 'path_label', 'eli_fragment', 'xml_id')
     mptt_level_indent = 20
+    fieldsets = (
+        ('اطلاعات اصلی', {
+            'fields': ('parent', 'unit_type', 'label', 'number', 'order_index', 'content')
+        }),
+        ('مراجع (Legacy)', {
+            'fields': ('document',),
+            'classes': ('collapse',)
+        }),
+        ('مراجع FRBR', {
+            'fields': ('work', 'expr', 'manifestation'),
+            'classes': ('collapse',)
+        }),
+        ('شناسه‌های Akoma Ntoso', {
+            'fields': ('eli_fragment', 'xml_id', 'text_plain'),
+            'classes': ('collapse',)
+        }),
+        ('اطلاعات سیستم', {
+            'fields': ('path_label', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        })
+    )
+    readonly_fields = ('path_label', 'created_at', 'updated_at')
+    
+    def get_source_ref(self, obj):
+        if obj.work:
+            return f"Work: {obj.work.title_official}"
+        elif obj.document:
+            return f"Doc: {obj.document.title}"
+        return "No Reference"
+    get_source_ref.short_description = 'مرجع'
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
@@ -188,12 +218,39 @@ class LegalUnitAdmin(MPTTModelAdmin, SimpleHistoryAdmin):
         return LegalDocumentAdmin().has_change_permission(request, obj.document)
 
 
-@admin.register(FileAsset)
+@admin.register(FileAsset, site=admin_site)
 class FileAssetAdmin(SimpleHistoryAdmin):
-    list_display = ('original_filename', 'content_type', 'size_mb', 'document', 'legal_unit', 'uploaded_by', 'created_at')
-    list_filter = ('content_type', 'created_at')
-    search_fields = ('original_filename', 'document__title', 'legal_unit__label')
-    readonly_fields = ('id', 'sha256', 'size_bytes', 'uploaded_by', 'created_at', 'updated_at')
+    list_display = ('original_filename', 'content_type', 'size_bytes', 'get_reference', 'uploaded_by', 'created_at')
+    list_filter = ('content_type', 'created_at', 'uploaded_by')
+    search_fields = ('original_filename', 'object_key', 'sha256')
+    readonly_fields = ('id', 'sha256', 'size_bytes', 'created_at', 'updated_at')
+    fieldsets = (
+        ('اطلاعات فایل', {
+            'fields': ('original_filename', 'content_type', 'size_bytes', 'sha256', 'bucket', 'object_key')
+        }),
+        ('مراجع (Legacy)', {
+            'fields': ('document', 'legal_unit'),
+            'classes': ('collapse',)
+        }),
+        ('مراجع FRBR', {
+            'fields': ('manifestation',),
+            'classes': ('collapse',)
+        }),
+        ('اطلاعات سیستم', {
+            'fields': ('uploaded_by', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        })
+    )
+    
+    def get_reference(self, obj):
+        if obj.manifestation:
+            return f"Manifestation: {obj.manifestation.expr.work.title_official}"
+        elif obj.document:
+            return f"Document: {obj.document.title}"
+        elif obj.legal_unit:
+            return f"Unit: {obj.legal_unit.label}"
+        return "No Reference"
+    get_reference.short_description = 'مرجع'
 
     def size_mb(self, obj):
         return f"{obj.size_bytes / (1024*1024):.2f} MB"
@@ -323,6 +380,23 @@ class InstrumentManifestationAdmin(SimpleHistoryAdmin):
     list_filter = ('publication_date', 'in_force_from', 'repeal_status', 'created_at')
     search_fields = ('expr__work__title_official', 'official_gazette_name', 'gazette_issue_no')
     readonly_fields = ('id', 'checksum_sha256', 'retrieval_date', 'created_at', 'updated_at')
+
+
+# Relations and Citations Admins
+@admin.register(InstrumentRelation, site=admin_site)
+class InstrumentRelationAdmin(SimpleHistoryAdmin):
+    list_display = ('from_work', 'relation_type', 'to_work', 'effective_date', 'created_at')
+    list_filter = ('relation_type', 'effective_date', 'created_at')
+    search_fields = ('from_work__title_official', 'to_work__title_official', 'notes')
+    readonly_fields = ('id', 'created_at', 'updated_at')
+
+
+@admin.register(PinpointCitation, site=admin_site)
+class PinpointCitationAdmin(SimpleHistoryAdmin):
+    list_display = ('from_unit', 'citation_type', 'to_unit', 'created_at')
+    list_filter = ('citation_type', 'created_at')
+    search_fields = ('from_unit__label', 'to_unit__label', 'context_text')
+    readonly_fields = ('id', 'created_at', 'updated_at')
 
 
 # Register all models with custom admin site

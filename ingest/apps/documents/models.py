@@ -239,12 +239,42 @@ class DocumentRelation(BaseModel):
 
 class LegalUnit(MPTTModel, BaseModel):
     """Hierarchical units within legal documents using MPTT."""
+    # Legacy reference (keep for backward compatibility)
     document = models.ForeignKey(
         LegalDocument, 
         on_delete=models.CASCADE, 
         related_name='units',
-        verbose_name='سند'
+        verbose_name='سند',
+        null=True,
+        blank=True
     )
+    
+    # New FRBR references
+    work = models.ForeignKey(
+        'InstrumentWork',
+        on_delete=models.CASCADE,
+        related_name='units',
+        verbose_name='اثر',
+        null=True,
+        blank=True
+    )
+    expr = models.ForeignKey(
+        'InstrumentExpression',
+        on_delete=models.CASCADE,
+        related_name='units',
+        verbose_name='بیان',
+        null=True,
+        blank=True
+    )
+    manifestation = models.ForeignKey(
+        'InstrumentManifestation',
+        on_delete=models.SET_NULL,
+        related_name='units',
+        verbose_name='تجلی',
+        null=True,
+        blank=True
+    )
+    
     parent = TreeForeignKey(
         'self', 
         on_delete=models.CASCADE, 
@@ -264,6 +294,11 @@ class LegalUnit(MPTTModel, BaseModel):
     path_label = models.CharField(max_length=500, blank=True, verbose_name='مسیر کامل')
     content = models.TextField(verbose_name='محتوا')
     
+    # New Akoma Ntoso identifiers
+    eli_fragment = models.CharField(max_length=200, blank=True, verbose_name='ELI Fragment')
+    xml_id = models.CharField(max_length=100, blank=True, verbose_name='XML ID')
+    text_plain = models.TextField(blank=True, verbose_name='متن ساده')
+    
     history = HistoricalRecords(excluded_fields=['lft', 'rght', 'tree_id', 'level'])
 
     class MPTTMeta:
@@ -273,6 +308,12 @@ class LegalUnit(MPTTModel, BaseModel):
         verbose_name = 'واحد حقوقی'
         verbose_name_plural = 'واحدهای حقوقی'
         ordering = ['document', 'tree_id', 'lft']
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(document__isnull=False) | models.Q(work__isnull=False),
+                name='legalunit_has_document_or_work'
+            )
+        ]
 
     def __str__(self):
         return f"{self.document.title} - {self.label}"
@@ -293,6 +334,7 @@ class LegalUnit(MPTTModel, BaseModel):
 
 class FileAsset(BaseModel):
     """File attachments for documents and units."""
+    # Legacy references (keep for backward compatibility)
     document = models.ForeignKey(
         LegalDocument, 
         on_delete=models.CASCADE, 
@@ -308,6 +350,16 @@ class FileAsset(BaseModel):
         blank=True,
         related_name='files',
         verbose_name='واحد حقوقی'
+    )
+    
+    # New FRBR reference - files primarily belong to manifestations
+    manifestation = models.ForeignKey(
+        'InstrumentManifestation',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='files',
+        verbose_name='تجلی'
     )
     
     # File metadata
@@ -331,16 +383,111 @@ class FileAsset(BaseModel):
         verbose_name = 'فایل ضمیمه'
         verbose_name_plural = 'فایل‌های ضمیمه'
         ordering = ['-created_at']
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    models.Q(document__isnull=False) | 
+                    models.Q(legal_unit__isnull=False) |
+                    models.Q(manifestation__isnull=False)
+                ),
+                name='fileasset_has_reference'
+            )
+        ]
 
     def __str__(self):
         return f"{self.original_filename} ({self.content_type})"
 
     def clean(self):
         from django.core.exceptions import ValidationError
-        if not self.document and not self.legal_unit:
-            raise ValidationError('فایل باید به سند یا واحد حقوقی متصل باشد.')
-        if self.document and self.legal_unit:
-            raise ValidationError('فایل نمی‌تواند همزمان به سند و واحد حقوقی متصل باشد.')
+        refs = [self.document, self.legal_unit, self.manifestation]
+        active_refs = [ref for ref in refs if ref is not None]
+        
+        if len(active_refs) == 0:
+            raise ValidationError('فایل باید به سند، واحد حقوقی، یا تجلی متصل باشد.')
+        if len(active_refs) > 1:
+            raise ValidationError('فایل نمی‌تواند همزمان به بیش از یک مرجع متصل باشد.')
+
+
+# Relations and Citations Models
+
+class InstrumentRelation(BaseModel):
+    """Relations between FRBR Works (e.g., amendments, repeals, references)."""
+    from_work = models.ForeignKey(
+        'InstrumentWork',
+        on_delete=models.CASCADE,
+        related_name='outgoing_relations',
+        verbose_name='اثر مبدأ'
+    )
+    to_work = models.ForeignKey(
+        'InstrumentWork',
+        on_delete=models.CASCADE,
+        related_name='incoming_relations',
+        verbose_name='اثر مقصد'
+    )
+    relation_type = models.CharField(
+        max_length=30,
+        choices=[
+            ('amends', 'اصلاح می‌کند'),
+            ('repeals', 'لغو می‌کند'),
+            ('references', 'ارجاع می‌دهد'),
+            ('implements', 'اجرا می‌کند'),
+            ('derives_from', 'مشتق از'),
+            ('supersedes', 'جایگزین می‌شود'),
+        ],
+        verbose_name='نوع رابطه'
+    )
+    effective_date = models.DateField(null=True, blank=True, verbose_name='تاریخ اثر')
+    notes = models.TextField(blank=True, verbose_name='یادداشت‌ها')
+    
+    history = HistoricalRecords()
+
+    class Meta:
+        verbose_name = 'رابطه ابزار حقوقی'
+        verbose_name_plural = 'روابط ابزارهای حقوقی'
+        unique_together = ['from_work', 'to_work', 'relation_type']
+
+    def __str__(self):
+        return f"{self.from_work.title_official} {self.get_relation_type_display()} {self.to_work.title_official}"
+
+
+class PinpointCitation(BaseModel):
+    """Precise citations between specific units of legal documents."""
+    from_unit = models.ForeignKey(
+        'LegalUnit',
+        on_delete=models.CASCADE,
+        related_name='outgoing_citations',
+        verbose_name='واحد مبدأ'
+    )
+    to_unit = models.ForeignKey(
+        'LegalUnit',
+        on_delete=models.CASCADE,
+        related_name='incoming_citations',
+        verbose_name='واحد مقصد'
+    )
+    citation_type = models.CharField(
+        max_length=20,
+        choices=[
+            ('direct', 'ارجاع مستقیم'),
+            ('see_also', 'نگاه کنید به'),
+            ('cf', 'مقایسه کنید'),
+            ('but_see', 'اما نگاه کنید'),
+            ('contra', 'در تضاد با'),
+        ],
+        default='direct',
+        verbose_name='نوع ارجاع'
+    )
+    context_text = models.TextField(blank=True, verbose_name='متن زمینه')
+    start_offset = models.PositiveIntegerField(null=True, blank=True, verbose_name='آفست شروع')
+    end_offset = models.PositiveIntegerField(null=True, blank=True, verbose_name='آفست پایان')
+    
+    history = HistoricalRecords()
+
+    class Meta:
+        verbose_name = 'ارجاع دقیق'
+        verbose_name_plural = 'ارجاعات دقیق'
+
+    def __str__(self):
+        return f"{self.from_unit.path_label} → {self.to_unit.path_label}"
 
 
 class QAEntry(BaseModel):
