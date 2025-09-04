@@ -1,6 +1,7 @@
-# Generated migration for Vocabulary model changes and new Language/Scheme models
+# Comprehensive migration for Vocabulary model changes and new Language/Scheme models
 
 from django.db import migrations, models
+import django.db.models.deletion
 import django.utils.timezone
 import simple_history.models
 import uuid
@@ -9,41 +10,29 @@ import uuid
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('masterdata', '0002_alter_historicalvocabulary_options_and_more'),
+        ('masterdata', '0001_initial'),
     ]
 
     operations = [
-        # Remove description field from Vocabulary
-        migrations.RemoveField(
-            model_name='vocabulary',
-            name='description',
+        # Update model options first
+        migrations.AlterModelOptions(
+            name='historicalvocabulary',
+            options={'get_latest_by': ('history_date', 'history_id'), 'ordering': ('-history_date', '-history_id'), 'verbose_name': 'historical موضوع', 'verbose_name_plural': 'historical موضوعات'},
         ),
-        migrations.RemoveField(
-            model_name='historicalvocabulary',
-            name='description',
+        migrations.AlterModelOptions(
+            name='historicalvocabularyterm',
+            options={'get_latest_by': ('history_date', 'history_id'), 'ordering': ('-history_date', '-history_id'), 'verbose_name': 'historical واژه', 'verbose_name_plural': 'historical واژگان'},
+        ),
+        migrations.AlterModelOptions(
+            name='vocabulary',
+            options={'ordering': ['name'], 'verbose_name': 'موضوع', 'verbose_name_plural': 'موضوعات'},
+        ),
+        migrations.AlterModelOptions(
+            name='vocabularyterm',
+            options={'ordering': ['vocabulary__name', 'term'], 'verbose_name': 'واژه', 'verbose_name_plural': 'واژگان'},
         ),
         
-        # Add new fields to Vocabulary
-        migrations.AddField(
-            model_name='vocabulary',
-            name='scheme',
-            field=models.CharField(blank=True, max_length=200, verbose_name='طرح کلی'),
-        ),
-        migrations.AddField(
-            model_name='vocabulary',
-            name='lang',
-            field=models.CharField(blank=True, max_length=10, verbose_name='زبان'),
-        ),
-        migrations.AddField(
-            model_name='historicalvocabulary',
-            name='scheme',
-            field=models.CharField(blank=True, max_length=200, verbose_name='طرح کلی'),
-        ),
-        migrations.AddField(
-            model_name='historicalvocabulary',
-            name='lang',
-            field=models.CharField(blank=True, max_length=10, verbose_name='زبان'),
-        ),
+        # Note: description field removal not needed as it doesn't exist in current schema
         
         # Create Language model
         migrations.CreateModel(
@@ -73,7 +62,6 @@ class Migration(migrations.Migration):
                 ('updated_at', models.DateTimeField(auto_now=True)),
                 ('name', models.CharField(max_length=200, verbose_name='نام')),
                 ('code', models.CharField(max_length=50, unique=True, verbose_name='کد')),
-                ('description', models.TextField(blank=True, verbose_name='توضیحات')),
                 ('is_active', models.BooleanField(default=True, verbose_name='فعال')),
             ],
             options={
@@ -115,7 +103,6 @@ class Migration(migrations.Migration):
                 ('updated_at', models.DateTimeField(blank=True, editable=False)),
                 ('name', models.CharField(max_length=200, verbose_name='نام')),
                 ('code', models.CharField(db_index=True, max_length=50, verbose_name='کد')),
-                ('description', models.TextField(blank=True, verbose_name='توضیحات')),
                 ('is_active', models.BooleanField(default=True, verbose_name='فعال')),
                 ('history_id', models.AutoField(primary_key=True, serialize=False)),
                 ('history_date', models.DateTimeField()),
@@ -129,5 +116,27 @@ class Migration(migrations.Migration):
                 'get_latest_by': 'history_date',
             },
             bases=(simple_history.models.HistoricalChanges, models.Model),
+        ),
+        
+        # Add ForeignKey fields to Vocabulary
+        migrations.AddField(
+            model_name='vocabulary',
+            name='scheme',
+            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='vocabularies', to='masterdata.scheme', verbose_name='طرح کلی'),
+        ),
+        migrations.AddField(
+            model_name='vocabulary',
+            name='lang',
+            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='vocabularies', to='masterdata.language', verbose_name='زبان'),
+        ),
+        migrations.AddField(
+            model_name='historicalvocabulary',
+            name='scheme',
+            field=models.ForeignKey(blank=True, db_constraint=False, null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='+', to='masterdata.scheme', verbose_name='طرح کلی'),
+        ),
+        migrations.AddField(
+            model_name='historicalvocabulary',
+            name='lang',
+            field=models.ForeignKey(blank=True, db_constraint=False, null=True, on_delete=django.db.models.deletion.DO_NOTHING, related_name='+', to='masterdata.language', verbose_name='زبان'),
         ),
     ]

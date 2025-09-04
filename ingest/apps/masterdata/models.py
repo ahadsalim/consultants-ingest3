@@ -35,14 +35,14 @@ class Jurisdiction(BaseModel):
 class IssuingAuthority(BaseModel):
     """Authority that issues legal documents."""
     name = models.CharField(max_length=200, verbose_name='نام')
-    code = models.CharField(max_length=50, unique=True, verbose_name='کد')
+    short_name = models.CharField(max_length=50, unique=True, verbose_name='نام کوتاه')
     jurisdiction = models.ForeignKey(
         Jurisdiction, 
         on_delete=models.CASCADE, 
         related_name='authorities',
         verbose_name='حوزه قضایی'
     )
-    description = models.TextField(blank=True, verbose_name='توضیحات')
+    uri = models.URLField(blank=True, verbose_name='URI')
     is_active = models.BooleanField(default=True, verbose_name='فعال')
     
     history = HistoricalRecords()
@@ -77,7 +77,6 @@ class Scheme(BaseModel):
     """Classification scheme for vocabularies."""
     name = models.CharField(max_length=200, verbose_name='نام')
     code = models.CharField(max_length=50, unique=True, verbose_name='کد')
-    description = models.TextField(blank=True, verbose_name='توضیحات')
     is_active = models.BooleanField(default=True, verbose_name='فعال')
     
     history = HistoricalRecords()

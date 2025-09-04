@@ -13,9 +13,9 @@ class JurisdictionAdmin(SimpleHistoryAdmin):
 
 
 class IssuingAuthorityAdmin(SimpleHistoryAdmin):
-    list_display = ('name', 'code', 'jurisdiction', 'is_active', 'created_at')
+    list_display = ('name', 'short_name', 'jurisdiction', 'is_active', 'created_at')
     list_filter = ('is_active', 'jurisdiction', 'created_at')
-    search_fields = ('name', 'code', 'description')
+    search_fields = ('name', 'short_name', 'uri')
     readonly_fields = ('id', 'created_at', 'updated_at')
     ordering = ('name',)
 
@@ -77,7 +77,7 @@ class SchemeAdmin(SimpleHistoryAdmin):
     verbose_name_plural = "📋 طرح‌های کلی"
     list_display = ('name', 'code', 'is_active', 'created_at')
     list_filter = ('is_active', 'created_at')
-    search_fields = ('name', 'code', 'description')
+    search_fields = ('name', 'code')
     readonly_fields = ('id', 'created_at', 'updated_at')
     ordering = ('name',)
 
