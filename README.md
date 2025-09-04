@@ -28,9 +28,9 @@ A production-ready Django 5 application for managing legal documents with hierar
 ### 1. Interactive Deployment
 
 ```bash
-cd ingest3
-chmod +x deploy.sh
-./deploy.sh
+cd ingest
+chmod +x deploy_ingest.sh
+./deploy_ingest.sh
 ```
 
 The deploy script will prompt for:
@@ -46,16 +46,16 @@ cp .env.example .env
 # Edit .env with your configuration
 
 # Start services (database + web only)
-docker-compose up -d --build
+docker-compose -f docker-compose.ingest.yml up -d --build
 
 # Run migrations
-docker-compose exec web python manage.py migrate
+docker-compose -f docker-compose.ingest.yml exec web python manage.py migrate
 
 # Create superuser
-docker-compose exec web python manage.py createsuperuser
+docker-compose -f docker-compose.ingest.yml exec web python manage.py createsuperuser
 
 # Collect static files
-docker-compose exec web python manage.py collectstatic --noinput
+docker-compose -f docker-compose.ingest.yml exec web python manage.py collectstatic --noinput
 ```
 
 ### 3. Access the Application
@@ -68,10 +68,10 @@ docker-compose exec web python manage.py collectstatic --noinput
 
 ```bash
 # Process pending sync jobs manually
-docker-compose exec web python manage.py process_syncjobs
+docker-compose -f docker-compose.ingest.yml exec web python manage.py process_syncjobs
 
 # Dry run to see what would be processed
-docker-compose exec web python manage.py process_syncjobs --dry-run
+docker-compose -f docker-compose.ingest.yml exec web python manage.py process_syncjobs --dry-run
 ```
 
 ## User Roles
@@ -156,13 +156,13 @@ python manage.py runserver
 
 ```bash
 # Run all tests
-docker-compose exec web pytest
+docker-compose -f docker-compose.ingest.yml exec web pytest
 
 # Run with coverage
-docker-compose exec web pytest --cov=ingest
+docker-compose -f docker-compose.ingest.yml exec web pytest --cov=ingest
 
 # Run specific test file
-docker-compose exec web pytest tests/test_models.py
+docker-compose -f docker-compose.ingest.yml exec web pytest tests/test_models.py
 ```
 
 ### Management Commands
@@ -225,7 +225,7 @@ The system is scaffolded for vector embeddings using pgvector:
 
 ```bash
 # Generate embeddings for approved content
-docker-compose exec web python manage.py shell
+docker-compose -f docker-compose.ingest.yml exec web python manage.py shell
 >>> from ingest.apps.embeddings.tasks import batch_generate_embeddings
 >>> batch_generate_embeddings.delay()
 ```
@@ -270,13 +270,13 @@ Key settings:
 
 ```bash
 # View application logs
-docker-compose logs web
+docker-compose -f docker-compose.ingest.yml logs web
 
 # View worker logs
-docker-compose logs worker
+docker-compose -f docker-compose.ingest.yml logs worker
 
 # View database logs
-docker-compose logs db
+docker-compose -f docker-compose.ingest.yml logs db
 ```
 
 ## License

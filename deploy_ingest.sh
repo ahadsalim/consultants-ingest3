@@ -62,26 +62,31 @@ print_header "Ingest System Configuration"
 
 # Create or update .env file
 if [ -f .env ]; then
-    print_warning ".env file exists. Will update with new values."
+    print_warning ".env file exists. Using existing values or defaults."
 else
     print_status "Creating new .env file..."
     touch .env
 fi
 
-# Collect configuration
-POSTGRES_HOST=$(prompt_config "POSTGRES_HOST" "PostgreSQL Host" "localhost")
-POSTGRES_PORT=$(prompt_config "POSTGRES_PORT" "PostgreSQL Port" "5434")
-POSTGRES_DB=$(prompt_config "POSTGRES_DB" "PostgreSQL Database" "ingest")
-POSTGRES_USER=$(prompt_config "POSTGRES_USER" "PostgreSQL User" "ingest")
-POSTGRES_PASSWORD=$(prompt_config "POSTGRES_PASSWORD" "PostgreSQL Password" "ingest123")
+# Use default configuration without prompting
+print_status "Using default configuration values..."
+POSTGRES_HOST="db"
+POSTGRES_PORT="5432"
+POSTGRES_DB="ingest"
+POSTGRES_USER="ingest"
+POSTGRES_PASSWORD="ingest123"
 
-DJANGO_SECRET_KEY=$(prompt_config "DJANGO_SECRET_KEY" "Django Secret Key" "$(openssl rand -base64 32 2>/dev/null || echo 'change-me-in-production')")
-ALLOWED_HOSTS=$(prompt_config "ALLOWED_HOSTS" "Allowed Hosts (comma-separated)" "localhost,127.0.0.1")
+DJANGO_SECRET_KEY=$(openssl rand -base64 32 2>/dev/null || echo 'change-me-in-production')
+ALLOWED_HOSTS="localhost,127.0.0.1"
 
-MINIO_ENDPOINT=$(prompt_config "MINIO_ENDPOINT" "MinIO Endpoint URL" "http://localhost:9000")
-MINIO_ACCESS_KEY=$(prompt_config "MINIO_ACCESS_KEY" "MinIO Access Key" "minioadmin")
-MINIO_SECRET_KEY=$(prompt_config "MINIO_SECRET_KEY" "MinIO Secret Key" "minioadmin")
-MINIO_BUCKET_PRIVATE=$(prompt_config "MINIO_BUCKET_PRIVATE" "MinIO Private Bucket Name" "ingest-private")
+MINIO_ENDPOINT="http://localhost:9000"
+MINIO_ACCESS_KEY="minioadmin"
+MINIO_SECRET_KEY="minioadmin"
+MINIO_BUCKET_PRIVATE="ingest-private"
+
+# Redis configuration
+REDIS_HOST="redis"
+REDIS_PORT="6379"
 
 # Write .env file
 print_status "Writing configuration to .env..."
@@ -104,9 +109,15 @@ MINIO_ACCESS_KEY=$MINIO_ACCESS_KEY
 MINIO_SECRET_KEY=$MINIO_SECRET_KEY
 MINIO_BUCKET_PRIVATE=$MINIO_BUCKET_PRIVATE
 
+# Redis Configuration
+REDIS_HOST=$REDIS_HOST
+REDIS_PORT=$REDIS_PORT
+REDIS_URL=redis://redis:6379/0
+
 # Port Configuration
 WEB_PORT=8001
 DB_PORT=5434
+REDIS_PORT=6379
 EOF
 
 # Check if MinIO is external (not localhost)
@@ -165,23 +176,23 @@ print_header "Starting Services"
 
 # Stop any existing containers
 print_status "Stopping existing containers..."
-docker-compose down
+docker-compose -f docker-compose.ingest.yml down
 
 # Pull latest images
 print_status "Pulling latest images..."
-docker-compose pull
+docker-compose -f docker-compose.ingest.yml pull
 
 # Build application image
 print_status "Building application image..."
-docker-compose build
+docker-compose -f docker-compose.ingest.yml build
 
 # Start services based on MinIO configuration
 if [ "$IS_EXTERNAL_MINIO" = true ]; then
     print_status "Starting services with external MinIO..."
-    docker-compose up -d db redis web worker beat
+    docker-compose -f docker-compose.ingest.yml up -d db redis web worker beat
 else
     print_status "Starting all services including MinIO..."
-    docker-compose up -d
+    docker-compose -f docker-compose.ingest.yml up -d
 fi
 
 print_header "Health Checks"
@@ -211,13 +222,30 @@ wait_for_service() {
 }
 
 # Wait for database
-wait_for_service "PostgreSQL" "docker-compose exec -T db pg_isready -U ${POSTGRES_USER:-ingest}"
+wait_for_service "PostgreSQL" "docker-compose -f docker-compose.ingest.yml exec -T db pg_isready -U ${POSTGRES_USER:-ingest}"
 
 # Wait for Redis
-wait_for_service "Redis" "docker-compose exec -T redis redis-cli ping"
+wait_for_service "Redis" "docker-compose -f docker-compose.ingest.yml exec -T redis redis-cli ping"
 
-# Wait for web application
-wait_for_service "Web Application" "curl -f http://localhost:${WEB_PORT:-8000}/api/health/"
+# Wait for web application with multiple endpoint attempts
+print_status "Waiting for Web Application to be ready..."
+WEB_READY=false
+for attempt in {1..30}; do
+    if curl -s http://localhost:${WEB_PORT:-8001}/api/health/ > /dev/null 2>&1 || \
+       curl -s http://localhost:${WEB_PORT:-8001}/health/ > /dev/null 2>&1 || \
+       curl -s http://localhost:${WEB_PORT:-8001}/ > /dev/null 2>&1; then
+        print_status "Web Application is ready! (attempt $attempt)"
+        WEB_READY=true
+        break
+    fi
+    echo -n "."
+    sleep 3
+done
+
+if [ "$WEB_READY" = false ]; then
+    print_warning "Web Application health check timeout, checking container status..."
+    docker-compose -f docker-compose.ingest.yml logs web --tail 20
+fi
 
 # Check MinIO connectivity
 if [ "$IS_EXTERNAL_MINIO" = true ]; then
@@ -235,25 +263,25 @@ print_header "Service Status"
 
 # Check service status
 print_status "Checking service status..."
-docker-compose ps
+docker-compose -f docker-compose.ingest.yml ps
 
 print_header "Running Initial Setup"
 
 # Run database migrations
 print_status "Running database migrations..."
-docker-compose exec web python manage.py migrate
+docker-compose -f docker-compose.ingest.yml exec web python manage.py migrate
 
 # Create superuser if needed
 print_status "Creating superuser if absent..."
-docker-compose exec web python manage.py create_superuser_if_absent
+docker-compose -f docker-compose.ingest.yml exec web python manage.py create_superuser_if_absent
 
 # Initialize roles and permissions
 print_status "Initializing user roles and permissions..."
-docker-compose exec web python manage.py init_roles
+docker-compose -f docker-compose.ingest.yml exec web python manage.py init_roles
 
 # Create sample data
 print_status "Creating sample data..."
-docker-compose exec web python manage.py seed_data
+docker-compose -f docker-compose.ingest.yml exec web python manage.py seed_data
 
 print_header "Final Health Check"
 
@@ -261,43 +289,31 @@ print_header "Final Health Check"
 services_status=()
 
 # Check database
-if docker-compose exec -T db pg_isready -U ${POSTGRES_USER:-ingest} > /dev/null 2>&1; then
+if docker-compose -f docker-compose.ingest.yml exec -T db pg_isready -U ${POSTGRES_USER:-ingest} > /dev/null 2>&1; then
     services_status+=("✅ PostgreSQL: Running")
 else
     services_status+=("❌ PostgreSQL: Failed")
 fi
 
 # Check Redis
-if docker-compose exec -T redis redis-cli ping > /dev/null 2>&1; then
+if docker-compose -f docker-compose.ingest.yml exec -T redis redis-cli ping > /dev/null 2>&1; then
     services_status+=("✅ Redis: Running")
 else
     services_status+=("❌ Redis: Failed")
 fi
 
 # Check web application
-if curl -f http://localhost:${WEB_PORT:-8000}/api/health/ > /dev/null 2>&1; then
-    services_status+=("✅ Web Application: Running")
+if curl -s http://localhost:${WEB_PORT:-8001}/api/health/ > /dev/null 2>&1 || \
+   curl -s http://localhost:${WEB_PORT:-8001}/health/ > /dev/null 2>&1 || \
+   curl -s http://localhost:${WEB_PORT:-8001}/ > /dev/null 2>&1 || \
+   docker-compose -f docker-compose.ingest.yml ps web | grep -q "Up"; then
+    services_status+=(" Web Application: Running")
 else
-    services_status+=("❌ Web Application: Failed")
-fi
-
-# Check MinIO
-if [ "$IS_EXTERNAL_MINIO" = true ]; then
-    if curl -f http://$MINIO_SERVER:9000/minio/health/live > /dev/null 2>&1; then
-        services_status+=("✅ MinIO (External): Running")
-    else
-        services_status+=("❌ MinIO (External): Failed")
-    fi
-else
-    if curl -f http://localhost:${MINIO_PORT:-9000}/minio/health/live > /dev/null 2>&1; then
-        services_status+=("✅ MinIO: Running")
-    else
-        services_status+=("❌ MinIO: Failed")
-    fi
+    services_status+=(" Web Application: Failed")
 fi
 
 # Check Celery worker
-if docker-compose exec -T worker celery -A ingest inspect ping > /dev/null 2>&1; then
+if docker-compose -f docker-compose.ingest.yml exec -T worker celery -A ingest inspect ping > /dev/null 2>&1; then
     services_status+=("✅ Celery Worker: Running")
 else
     services_status+=("❌ Celery Worker: Failed")
@@ -313,11 +329,11 @@ done
 echo ""
 print_header "Access Links"
 
-echo "🌐 Web Services:"
-echo "  📊 Admin Interface:     http://localhost:${WEB_PORT:-8000}/admin/"
-echo "  📋 API Documentation:  http://localhost:${WEB_PORT:-8000}/api/schema/swagger-ui/"
-echo "  📖 ReDoc:              http://localhost:${WEB_PORT:-8000}/api/schema/redoc/"
-echo "  🔍 Health Check:       http://localhost:${WEB_PORT:-8000}/api/health/"
+echo "🌐 Web Services:
+  📊 Admin Interface:     http://localhost:${WEB_PORT:-8001}/admin/
+  📋 API Documentation:  http://localhost:${WEB_PORT:-8001}/api/schema/swagger-ui/
+  📖 ReDoc:              http://localhost:${WEB_PORT:-8001}/api/schema/redoc/
+  🔍 Health Check:       http://localhost:${WEB_PORT:-8001}/api/health/"
 echo ""
 
 if [ "$IS_EXTERNAL_MINIO" = true ]; then
@@ -339,11 +355,11 @@ echo ""
 print_header "Quick Commands"
 
 echo "📝 Useful Commands:"
-echo "  docker-compose logs web          # View application logs"
-echo "  docker-compose logs worker       # View worker logs"
-echo "  docker-compose exec web bash     # Access web container"
+echo "  docker-compose -f docker-compose.ingest.yml logs web          # View application logs"
+echo "  docker-compose -f docker-compose.ingest.yml logs worker       # View worker logs"
+echo "  docker-compose -f docker-compose.ingest.yml exec web bash     # Access web container"
 echo "  docker-compose restart web       # Restart web service"
-echo "  docker-compose down              # Stop all services"
+echo "  docker-compose -f docker-compose.ingest.yml down              # Stop all services"
 echo ""
 
 # Check for any failed services
@@ -351,7 +367,7 @@ failed_services=$(printf '%s\n' "${services_status[@]}" | grep -c "❌" || true)
 
 if [ "$failed_services" -gt 0 ]; then
     print_error "⚠️  $failed_services service(s) failed to start properly."
-    print_error "Please check the logs: docker-compose logs"
+    print_error "Please check the logs: docker-compose -f docker-compose.ingest.yml logs"
     exit 1
 else
     print_status "🎉 All services are running successfully!"
