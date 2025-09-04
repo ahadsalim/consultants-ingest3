@@ -33,7 +33,7 @@ class FileAssetInline(admin.TabularInline):
     readonly_fields = ('id', 'sha256', 'size_bytes', 'uploaded_by', 'created_at')
 
 
-@admin.register(LegalDocument)
+@admin.register(LegalDocument, site=admin_site)
 class LegalDocumentAdmin(SimpleHistoryAdmin):
     verbose_name = "سند حقوقی"
     verbose_name_plural = "📄 اسناد حقوقی"
@@ -155,7 +155,7 @@ class LegalDocumentAdmin(SimpleHistoryAdmin):
     resend_to_core.short_description = 'ارسال مجدد به هسته'
 
 
-@admin.register(DocumentRelation)
+@admin.register(DocumentRelation, site=admin_site)
 class DocumentRelationAdmin(SimpleHistoryAdmin):
     list_display = ('from_document', 'relation_type', 'to_document', 'created_at')
     list_filter = ('relation_type', 'created_at')
@@ -163,7 +163,7 @@ class DocumentRelationAdmin(SimpleHistoryAdmin):
     readonly_fields = ('id', 'created_at', 'updated_at')
 
 
-@admin.register(LegalUnit)
+@admin.register(LegalUnit, site=admin_site)
 class LegalUnitAdmin(MPTTModelAdmin, SimpleHistoryAdmin):
     list_display = ('label', 'unit_type', 'get_source_ref', 'parent', 'order_index')
     list_filter = ('unit_type', 'document', 'work', 'expr')
@@ -258,7 +258,7 @@ class FileAssetAdmin(SimpleHistoryAdmin):
     size_mb.short_description = 'اندازه (MB)'
 
 
-@admin.register(QAEntry)
+@admin.register(QAEntry, site=admin_site)
 class QAEntryAdmin(SimpleHistoryAdmin):
     list_display = ('question_preview', 'status_badge', 'source_document', 'created_by', 'created_at')
     list_filter = ('status', 'created_at')

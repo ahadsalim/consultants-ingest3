@@ -1,9 +1,10 @@
 from django.contrib import admin
 from simple_history.admin import SimpleHistoryAdmin
 from .models import Embedding
+from ingest.admin import admin_site
 
 
-@admin.register(Embedding)
+@admin.register(Embedding, site=admin_site)
 class EmbeddingAdmin(SimpleHistoryAdmin):
     list_display = ('content_object', 'model_name', 'created_at')
     list_filter = ('model_name', 'content_type', 'created_at')

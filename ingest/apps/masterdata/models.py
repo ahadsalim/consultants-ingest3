@@ -56,17 +56,67 @@ class IssuingAuthority(BaseModel):
         return f"{self.name} ({self.jurisdiction.name})"
 
 
-class Vocabulary(BaseModel):
-    """Vocabulary for categorizing terms."""
-    name = models.CharField(max_length=200, verbose_name='نام')
-    code = models.CharField(max_length=50, unique=True, verbose_name='کد')
-    description = models.TextField(blank=True, verbose_name='توضیحات')
+class Language(BaseModel):
+    """Language for vocabulary categorization."""
+    name = models.CharField(max_length=100, verbose_name='نام')
+    code = models.CharField(max_length=10, unique=True, verbose_name='کد')  # e.g., 'fa', 'en', 'ar'
+    is_active = models.BooleanField(default=True, verbose_name='فعال')
     
     history = HistoricalRecords()
 
     class Meta:
-        verbose_name = 'واژگان'
-        verbose_name_plural = 'واژگان‌ها'
+        verbose_name = 'زبان'
+        verbose_name_plural = 'زبان‌ها'
+        ordering = ['name']
+
+    def __str__(self):
+        return f"{self.name} ({self.code})"
+
+
+class Scheme(BaseModel):
+    """Classification scheme for vocabularies."""
+    name = models.CharField(max_length=200, verbose_name='نام')
+    code = models.CharField(max_length=50, unique=True, verbose_name='کد')
+    description = models.TextField(blank=True, verbose_name='توضیحات')
+    is_active = models.BooleanField(default=True, verbose_name='فعال')
+    
+    history = HistoricalRecords()
+
+    class Meta:
+        verbose_name = 'طرح کلی'
+        verbose_name_plural = 'طرح‌های کلی'
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class Vocabulary(BaseModel):
+    """Vocabulary for categorizing terms."""
+    name = models.CharField(max_length=200, verbose_name='نام')
+    code = models.CharField(max_length=50, unique=True, verbose_name='کد')
+    scheme = models.ForeignKey(
+        Scheme, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='vocabularies',
+        verbose_name='طرح کلی'
+    )
+    lang = models.ForeignKey(
+        Language, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='vocabularies',
+        verbose_name='زبان'
+    )
+    
+    history = HistoricalRecords()
+
+    class Meta:
+        verbose_name = 'موضوع'
+        verbose_name_plural = 'موضوعات'
         ordering = ['name']
 
     def __str__(self):
@@ -89,8 +139,8 @@ class VocabularyTerm(BaseModel):
     history = HistoricalRecords()
 
     class Meta:
-        verbose_name = 'اصطلاح واژگان'
-        verbose_name_plural = 'اصطلاحات واژگان'
+        verbose_name = 'واژه'
+        verbose_name_plural = 'واژگان'
         ordering = ['vocabulary__name', 'term']
         unique_together = ['vocabulary', 'code']
 
