@@ -18,7 +18,6 @@ class Jurisdiction(BaseModel):
     """Legal jurisdiction (e.g., Iran, Tehran Province)."""
     name = models.CharField(max_length=200, verbose_name='نام')
     code = models.CharField(max_length=50, unique=True, verbose_name='کد')
-    description = models.TextField(blank=True, verbose_name='توضیحات')
     is_active = models.BooleanField(default=True, verbose_name='فعال')
     
     history = HistoricalRecords()

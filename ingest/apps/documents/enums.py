@@ -1,6 +1,13 @@
 from django.db import models
 
 
+class ConsolidationLevel(models.TextChoices):
+    """Consolidation levels for legal expressions."""
+    BASE = 'base', 'پایه'
+    CONSOLIDATED = 'consolidated', 'تجمیع شده'
+    ANNOTATED = 'annotated', 'حاشیه نویسی'
+
+
 class DocumentType(models.TextChoices):
     LAW = 'law', 'قانون'
     BYLAW = 'bylaw', 'آیین‌نامه'

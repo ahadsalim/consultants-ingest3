@@ -6,18 +6,18 @@ from simple_history.admin import SimpleHistoryAdmin
 from mptt.admin import MPTTModelAdmin
 
 from .models import (
-    LegalDocument, DocumentRelation, LegalUnit, FileAsset, QAEntry,
+    LegalUnit, FileAsset, QAEntry,
     InstrumentWork, InstrumentExpression, InstrumentManifestation,
     InstrumentRelation, PinpointCitation, Tag, WorkTag, UnitTag,
     IngestLog, RAGChunk
 )
-from .enums import DocumentStatus, QAStatus
+from .enums import QAStatus
 from ingest.admin import admin_site
 
 
 class DocumentRelationInline(admin.TabularInline):
-    model = DocumentRelation
-    fk_name = 'from_document'
+    model = InstrumentRelation
+    fk_name = 'from_work'
     extra = 1
 
 
@@ -33,149 +33,21 @@ class FileAssetInline(admin.TabularInline):
     readonly_fields = ('id', 'sha256', 'size_bytes', 'uploaded_by', 'created_at')
 
 
-@admin.register(LegalDocument, site=admin_site)
-class LegalDocumentAdmin(SimpleHistoryAdmin):
-    verbose_name = "سند حقوقی"
-    verbose_name_plural = "📄 اسناد حقوقی"
-    list_display = ('title', 'doc_type', 'jurisdiction', 'authority', 'status_badge', 'created_by', 'created_at')
-    list_filter = ('status', 'doc_type', 'jurisdiction', 'authority', 'created_at')
-    search_fields = ('title', 'reference_no', 'created_by__username')
-    readonly_fields = ('id', 'created_at', 'updated_at')
-    filter_horizontal = ('subject_terms',)
-    inlines = [DocumentRelationInline, LegalUnitInline, FileAssetInline]
-    
-    fieldsets = (
-        ('اطلاعات اصلی', {
-            'fields': ('title', 'reference_no', 'doc_type', 'jurisdiction', 'authority')
-        }),
-        ('تاریخ‌ها', {
-            'fields': ('enactment_date', 'effective_date', 'expiry_date')
-        }),
-        ('وضعیت و گردش کار', {
-            'fields': ('status', 'created_by', 'reviewed_by', 'approved_by')
-        }),
-        ('موضوعات', {
-            'fields': ('subject_terms',)
-        }),
-        ('اطلاعات سیستم', {
-            'fields': ('id', 'created_at', 'updated_at'),
-            'classes': ('collapse',)
-        }),
-    )
-
-    actions = ['submit_for_review', 'approve_documents', 'reject_documents', 'resend_to_core']
-
-    def status_badge(self, obj):
-        colors = {
-            DocumentStatus.DRAFT: 'gray',
-            DocumentStatus.UNDER_REVIEW: 'orange',
-            DocumentStatus.APPROVED: 'green',
-            DocumentStatus.REJECTED: 'red',
-        }
-        return format_html(
-            '<span style="color: {}; font-weight: bold;">{}</span>',
-            colors.get(obj.status, 'black'),
-            obj.get_status_display()
-        )
-    status_badge.short_description = 'وضعیت'
-
-    def get_queryset(self, request):
-        qs = super().get_queryset(request)
-        if request.user.is_superuser:
-            return qs
-        
-        # Operators can only see their own documents
-        if request.user.groups.filter(name='Operator').exists():
-            return qs.filter(created_by=request.user)
-        
-        return qs
-
-    def has_change_permission(self, request, obj=None):
-        if not obj:
-            return True
-        
-        # Superuser can change everything
-        if request.user.is_superuser:
-            return True
-        
-        # Approved documents are read-only except for admins
-        if obj.status == DocumentStatus.APPROVED:
-            return request.user.groups.filter(name='Admin').exists()
-        
-        # Operators can only edit their own documents
-        if request.user.groups.filter(name='Operator').exists():
-            return obj.created_by == request.user
-        
-        return True
-
-    def submit_for_review(self, request, queryset):
-        count = 0
-        for doc in queryset:
-            if doc.status == DocumentStatus.DRAFT:
-                doc.status = DocumentStatus.UNDER_REVIEW
-                doc.reviewed_by = None
-                doc.save()
-                count += 1
-        self.message_user(request, f'{count} سند برای بررسی ارسال شد.')
-    submit_for_review.short_description = 'ارسال برای بررسی'
-
-    def approve_documents(self, request, queryset):
-        if not request.user.groups.filter(name__in=['Reviewer', 'Admin']).exists():
-            self.message_user(request, 'شما مجاز به تأیید اسناد نیستید.', level='ERROR')
-            return
-        
-        count = 0
-        for doc in queryset:
-            if doc.status == DocumentStatus.UNDER_REVIEW:
-                doc.status = DocumentStatus.APPROVED
-                doc.approved_by = request.user
-                doc.save()
-                # TODO: Trigger sync job
-                count += 1
-        self.message_user(request, f'{count} سند تأیید شد.')
-    approve_documents.short_description = 'تأیید اسناد'
-
-    def reject_documents(self, request, queryset):
-        if not request.user.groups.filter(name__in=['Reviewer', 'Admin']).exists():
-            self.message_user(request, 'شما مجاز به رد اسناد نیستید.', level='ERROR')
-            return
-        
-        count = 0
-        for doc in queryset:
-            if doc.status == DocumentStatus.UNDER_REVIEW:
-                doc.status = DocumentStatus.REJECTED
-                doc.save()
-                count += 1
-        self.message_user(request, f'{count} سند رد شد.')
-    reject_documents.short_description = 'رد اسناد'
-
-    def resend_to_core(self, request, queryset):
-        # TODO: Implement resend to core functionality
-        self.message_user(request, 'عملیات ارسال مجدد به هسته در حال پیاده‌سازی است.')
-    resend_to_core.short_description = 'ارسال مجدد به هسته'
+"""Removed LegalDocument admin (model deprecated)."""
 
 
-@admin.register(DocumentRelation, site=admin_site)
-class DocumentRelationAdmin(SimpleHistoryAdmin):
-    list_display = ('from_document', 'relation_type', 'to_document', 'created_at')
-    list_filter = ('relation_type', 'created_at')
-    search_fields = ('from_document__title', 'to_document__title')
-    readonly_fields = ('id', 'created_at', 'updated_at')
+"""Removed DocumentRelation admin (model deprecated)."""
 
 
 @admin.register(LegalUnit, site=admin_site)
 class LegalUnitAdmin(MPTTModelAdmin, SimpleHistoryAdmin):
     list_display = ('label', 'unit_type', 'get_source_ref', 'parent', 'order_index')
-    list_filter = ('unit_type', 'document', 'work', 'expr')
+    list_filter = ('unit_type', 'work', 'expr')
     search_fields = ('label', 'content', 'path_label', 'eli_fragment', 'xml_id')
     mptt_level_indent = 20
     fieldsets = (
         ('اطلاعات اصلی', {
             'fields': ('parent', 'unit_type', 'label', 'number', 'order_index', 'content')
-        }),
-        ('مراجع (Legacy)', {
-            'fields': ('document',),
-            'classes': ('collapse',)
         }),
         ('مراجع FRBR', {
             'fields': ('work', 'expr', 'manifestation'),
@@ -195,28 +67,14 @@ class LegalUnitAdmin(MPTTModelAdmin, SimpleHistoryAdmin):
     def get_source_ref(self, obj):
         if obj.work:
             return f"Work: {obj.work.title_official}"
-        elif obj.document:
-            return f"Doc: {obj.document.title}"
         return "No Reference"
     get_source_ref.short_description = 'مرجع'
 
     def get_queryset(self, request):
-        qs = super().get_queryset(request)
-        if request.user.is_superuser:
-            return qs
-        
-        # Operators can only see units from their own documents
-        if request.user.groups.filter(name='Operator').exists():
-            return qs.filter(document__created_by=request.user)
-        
-        return qs
+        return super().get_queryset(request)
 
     def has_change_permission(self, request, obj=None):
-        if not obj:
-            return True
-        
-        # Check document permissions
-        return LegalDocumentAdmin().has_change_permission(request, obj.document)
+        return super().has_change_permission(request, obj)
 
 
 @admin.register(FileAsset, site=admin_site)
@@ -229,8 +87,8 @@ class FileAssetAdmin(SimpleHistoryAdmin):
         ('اطلاعات فایل', {
             'fields': ('original_filename', 'content_type', 'size_bytes', 'sha256', 'bucket', 'object_key')
         }),
-        ('مراجع (Legacy)', {
-            'fields': ('document', 'legal_unit'),
+        ('مراجع', {
+            'fields': ('legal_unit',),
             'classes': ('collapse',)
         }),
         ('مراجع FRBR', {
@@ -246,8 +104,6 @@ class FileAssetAdmin(SimpleHistoryAdmin):
     def get_reference(self, obj):
         if obj.manifestation:
             return f"Manifestation: {obj.manifestation.expr.work.title_official}"
-        elif obj.document:
-            return f"Document: {obj.document.title}"
         elif obj.legal_unit:
             return f"Unit: {obj.legal_unit.label}"
         return "No Reference"
@@ -260,7 +116,7 @@ class FileAssetAdmin(SimpleHistoryAdmin):
 
 @admin.register(QAEntry, site=admin_site)
 class QAEntryAdmin(SimpleHistoryAdmin):
-    list_display = ('question_preview', 'status_badge', 'source_document', 'created_by', 'created_at')
+    list_display = ('question_preview', 'status_badge', 'get_source', 'created_by', 'created_at')
     list_filter = ('status', 'created_at')
     search_fields = ('question', 'answer', 'created_by__username')
     readonly_fields = ('id', 'created_at', 'updated_at')
@@ -271,6 +127,10 @@ class QAEntryAdmin(SimpleHistoryAdmin):
     def question_preview(self, obj):
         return obj.question[:100] + '...' if len(obj.question) > 100 else obj.question
     question_preview.short_description = 'سؤال'
+
+    def get_source(self, obj):
+        return obj.source_unit.path_label if obj.source_unit else '-'
+    get_source.short_description = 'مرجع'
 
     def status_badge(self, obj):
         colors = {
@@ -363,24 +223,116 @@ class InstrumentWorkAdmin(SimpleHistoryAdmin):
     list_display = ('title_official', 'doc_type', 'jurisdiction', 'authority', 'local_slug', 'created_at')
     list_filter = ('doc_type', 'jurisdiction', 'authority', 'created_at')
     search_fields = ('title_official', 'local_slug', 'subject_summary')
-    prepopulated_fields = {'local_slug': ('title_official',)}
+    prepopulated_fields = {'local_slug': ('doc_type', 'title_official')}
     readonly_fields = ('id', 'created_at', 'updated_at')
+    
+    fieldsets = (
+        ('اطلاعات اصلی', {
+            'fields': ('title_official', 'doc_type', 'jurisdiction', 'authority')
+        }),
+        ('شناسه‌ها', {
+            'fields': ('local_slug', 'primary_language')
+        }),
+        ('شناسه‌های یکتا', {
+            'fields': ('eli_uri_work', 'urn_lex'),
+            'classes': ('collapse',)
+        }),
+        ('اطلاعات تکمیلی', {
+            'fields': ('subject_summary',),
+            'classes': ('collapse',)
+        }),
+        ('اطلاعات سیستم', {
+            'fields': ('id', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        form.base_fields['title_official'].help_text = 'عنوان رسمی سند را وارد کنید.'
+        form.base_fields['doc_type'].help_text = 'نوع سند را از لیست انتخاب نمایید.'
+        form.base_fields['jurisdiction'].help_text = 'حوزه قضایی مرتبط با این سند را انتخاب کنید.'
+        form.base_fields['authority'].help_text = 'مرجع صادرکننده سند را انتخاب کنید.'
+        form.base_fields['local_slug'].help_text = 'این فیلد به صورت خودکار از عنوان سند و نوع آن ساخته می‌شود.'
+        form.base_fields['primary_language'].help_text = 'زبان اصلی سند را انتخاب کنید.'
+        form.base_fields['eli_uri_work'].help_text = 'شناسه ELI اثر (در صورت وجود). فرمت: https://domain/country/type/year/number'
+        form.base_fields['urn_lex'].help_text = 'شناسه URN LEX (در صورت وجود). فرمت: ir:authority:doc_type:yyyy-mm-dd:number'
+        form.base_fields['subject_summary'].help_text = 'خلاصه‌ای از موضوع سند را وارد کنید (اختیاری).'
+        return form
 
 
 @admin.register(InstrumentExpression, site=admin_site)
 class InstrumentExpressionAdmin(SimpleHistoryAdmin):
     list_display = ('work', 'language', 'expression_date', 'consolidation_level', 'created_at')
-    list_filter = ('language', 'expression_date', 'created_at')
+    list_filter = ('language', 'consolidation_level', 'created_at')
     search_fields = ('work__title_official', 'eli_uri_expr')
     readonly_fields = ('id', 'created_at', 'updated_at')
+    
+    fieldsets = (
+        ('اطلاعات اصلی', {
+            'fields': ('work', 'language', 'consolidation_level', 'expression_date')
+        }),
+        ('شناسه‌های یکتا', {
+            'fields': ('eli_uri_expr',),
+            'classes': ('collapse',)
+        }),
+        ('اطلاعات سیستم', {
+            'fields': ('id', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        form.base_fields['work'].help_text = 'سند حقوقی مرتبط با این نسخه را انتخاب کنید.'
+        form.base_fields['language'].help_text = 'زبان این نسخه از سند را مشخص کنید.'
+        form.base_fields['consolidation_level'].help_text = 'سطح تلفیق این نسخه را مشخص کنید (پایه، اصلاحی، تلفیقی).'
+        form.base_fields['expression_date'].help_text = 'تاریخ ایجاد این نسخه از سند را وارد کنید.'
+        form.base_fields['eli_uri_expr'].help_text = 'شناسه ELI این نسخه از سند (در صورت وجود).'
+        return form
 
 
 @admin.register(InstrumentManifestation, site=admin_site)
 class InstrumentManifestationAdmin(SimpleHistoryAdmin):
-    list_display = ('expr', 'publication_date', 'official_gazette_name', 'in_force_from', 'in_force_to')
+    list_display = ('expr', 'publication_date', 'official_gazette_name', 'repeal_status', 'in_force_from', 'in_force_to')
     list_filter = ('publication_date', 'in_force_from', 'repeal_status', 'created_at')
     search_fields = ('expr__work__title_official', 'official_gazette_name', 'gazette_issue_no')
     readonly_fields = ('id', 'checksum_sha256', 'retrieval_date', 'created_at', 'updated_at')
+    inlines = [LegalUnitInline, FileAssetInline]
+    fieldsets = (
+        ('اطلاعات اصلی سند', {
+            'fields': ('expr', 'publication_date', 'official_gazette_name', 'gazette_issue_no', 'page_start')
+        }),
+        ('وضعیت سند', {
+            'fields': ('repeal_status', 'in_force_from', 'in_force_to')
+        }),
+        ('منبع و انتشار', {
+            'fields': ('source_url', 'checksum_sha256')
+        }),
+        ('اطلاعات سیستم', {
+            'fields': ('retrieval_date', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        })
+    )
+
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        
+        # Make in_force_to required if status is REPEALED
+        if 'repeal_status' in form.base_fields and 'in_force_to' in form.base_fields:
+            repeal_status = form.base_fields['repeal_status']
+            in_force_to = form.base_fields['in_force_to']
+            
+            # Add JavaScript to show/hide and make required based on status
+            repeal_status.widget.attrs.update({
+                'onchange': "document.querySelector('#id_in_force_to').required = this.value === 'repealed';"
+            })
+            
+            # Set initial required state
+            if obj and obj.repeal_status == 'repealed':
+                in_force_to.required = True
+        
+        return form
 
 
 # Relations and Citations Admins

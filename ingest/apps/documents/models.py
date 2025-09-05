@@ -4,11 +4,12 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
 from django.core.files.storage import default_storage
+from django.core.exceptions import ValidationError
 from mptt.models import MPTTModel, TreeForeignKey
 from simple_history.models import HistoricalRecords
 
-from ingest.apps.masterdata.models import BaseModel, Jurisdiction, IssuingAuthority, VocabularyTerm
-from .enums import DocumentType, DocumentStatus, RelationType, UnitType, QAStatus
+from ingest.apps.masterdata.models import BaseModel, Jurisdiction, IssuingAuthority, VocabularyTerm, Language
+from .enums import DocumentType, DocumentStatus, RelationType, UnitType, QAStatus, ConsolidationLevel
 
 
 # FRBR Core Models - New Schema
@@ -16,8 +17,8 @@ class InstrumentWork(BaseModel):
     """FRBR Work level - abstract legal instrument concept."""
     
     class Meta:
-        verbose_name = "اثر حقوقی"
-        verbose_name_plural = "آثار حقوقی"
+        verbose_name = "تعریف سند حقوقی"
+        verbose_name_plural = "تعریف سند حقوقی"
         
     title_official = models.CharField(max_length=500, verbose_name='عنوان رسمی')
     doc_type = models.CharField(
@@ -38,10 +39,26 @@ class InstrumentWork(BaseModel):
         related_name='instrument_works',
         verbose_name='مرجع صادرکننده'
     )
-    eli_uri_work = models.URLField(blank=True, verbose_name='ELI URI اثر')
-    urn_lex = models.CharField(max_length=200, blank=True, verbose_name='URN LEX')
+    eli_uri_work = models.URLField(
+        blank=True, 
+        verbose_name='ELI URI اثر',
+        help_text='https://domain/country/type/year/number<br>مثال: https://laws.example.ir/ir/act/2020/123'
+    )
+    urn_lex = models.CharField(
+        max_length=200, 
+        blank=True, 
+        verbose_name='URN LEX',
+        help_text='ir:authority:doc_type:yyyy-mm-dd:number<br>مثال: ir:majlis:law:2020-06-01:123'
+    )
     local_slug = models.SlugField(max_length=100, unique=True, verbose_name='شناسه محلی')
-    primary_language = models.CharField(max_length=10, default='fa', verbose_name='زبان اصلی')
+    primary_language = models.ForeignKey(
+        'masterdata.Language',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        default=None,
+        verbose_name='زبان اصلی'
+    )
     subject_summary = models.TextField(blank=True, verbose_name='خلاصه موضوع')
     
     history = HistoricalRecords()
@@ -54,19 +71,30 @@ class InstrumentExpression(BaseModel):
     """FRBR Expression level - specific language/version of a work."""
     
     class Meta:
-        verbose_name = "بیان حقوقی"
-        verbose_name_plural = "بیان‌های حقوقی"
+        verbose_name = "تعریف نسخه سند"
+        verbose_name_plural = "تعریف نسخه سند"
         unique_together = ['work', 'language', 'consolidation_level', 'expression_date']
         
     work = models.ForeignKey(
         InstrumentWork,
         on_delete=models.CASCADE,
         related_name='expressions',
-        verbose_name='اثر'
+        verbose_name='سند حقوقی'
     )
-    language = models.CharField(max_length=10, default='fa', verbose_name='زبان')
-    consolidation_level = models.CharField(max_length=50, blank=True, verbose_name='سطح تلفیق')
-    expression_date = models.DateField(verbose_name='تاریخ بیان')
+    language = models.ForeignKey(
+        Language,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name='زبان'
+    )
+    consolidation_level = models.CharField(
+        max_length=20,
+        choices=ConsolidationLevel.choices,
+        default=ConsolidationLevel.BASE,
+        verbose_name='سطح تلفیق'
+    )
+    expression_date = models.DateField(verbose_name='تاریخ نسخه')
     eli_uri_expr = models.URLField(blank=True, verbose_name='ELI URI بیان')
     
     history = HistoricalRecords()
@@ -78,9 +106,13 @@ class InstrumentExpression(BaseModel):
 class InstrumentManifestation(BaseModel):
     """FRBR Manifestation level - physical/digital embodiment."""
     
+    class RepealStatus(models.TextChoices):
+        IN_FORCE = 'in_force', 'جاری و لازم الاجرا'
+        REPEALED = 'repealed', 'لغو یا منسوخ شده'
+    
     class Meta:
-        verbose_name = "تجلی حقوقی"
-        verbose_name_plural = "تجلی‌های حقوقی"
+        verbose_name = "تعریف انتشار سند"
+        verbose_name_plural = "تعریف انتشار سند"
         constraints = [
             models.CheckConstraint(
                 check=models.Q(in_force_to__gte=models.F('in_force_from')) | models.Q(in_force_to__isnull=True),
@@ -92,20 +124,35 @@ class InstrumentManifestation(BaseModel):
         InstrumentExpression,
         on_delete=models.CASCADE,
         related_name='manifestations',
-        verbose_name='بیان'
+        verbose_name='نسخه سند'
     )
     publication_date = models.DateField(verbose_name='تاریخ انتشار')
     official_gazette_name = models.CharField(max_length=200, blank=True, verbose_name='نام روزنامه رسمی')
-    gazette_issue_no = models.CharField(max_length=50, blank=True, verbose_name='شماره نشریه')
-    page_start = models.PositiveIntegerField(null=True, blank=True, verbose_name='صفحه شروع')
-    page_end = models.PositiveIntegerField(null=True, blank=True, verbose_name='صفحه پایان')
-    source_url = models.URLField(blank=True, verbose_name='URL منبع')
+    gazette_issue_no = models.CharField(max_length=50, blank=True, verbose_name='شماره نامه')
+    page_start = models.PositiveIntegerField(null=True, blank=True, verbose_name='صفحه شروع-پایان')
+    source_url = models.URLField(blank=True, verbose_name='ELI URI / URL منبع')
     checksum_sha256 = models.CharField(max_length=64, unique=True, blank=True, verbose_name='چکسام SHA256')
-    eli_uri_manifestation = models.URLField(blank=True, verbose_name='ELI URI تجلی')
     in_force_from = models.DateField(null=True, blank=True, verbose_name='اجرا از تاریخ')
-    in_force_to = models.DateField(null=True, blank=True, verbose_name='اجرا تا تاریخ')
-    repeal_status = models.CharField(max_length=50, blank=True, verbose_name='وضعیت لغو')
+    repeal_status = models.CharField(
+        max_length=20,
+        choices=RepealStatus.choices,
+        default=RepealStatus.IN_FORCE,
+        verbose_name='وضعیت سند'
+    )
+    in_force_to = models.DateField(
+        null=True, 
+        blank=True, 
+        verbose_name='اجرا تا تاریخ',
+        help_text='در صورتی که وضعیت سند "لغو یا منسوخ شده" باشد، این فیلد الزامی است.'
+    )
     retrieval_date = models.DateTimeField(auto_now_add=True, verbose_name='تاریخ بازیابی')
+    
+    def clean(self):
+        super().clean()
+        if self.repeal_status == self.RepealStatus.REPEALED and not self.in_force_to:
+            raise ValidationError({
+                'in_force_to': 'برای اسناد لغو شده، تعیین تاریخ پایان اجرا الزامی است.'
+            })
     
     history = HistoricalRecords()
     
@@ -113,142 +160,9 @@ class InstrumentManifestation(BaseModel):
         return f"{self.expr.work.title_official} - {self.publication_date}"
 
 
-class LegalDocument(BaseModel):
-    """Legal document model with full lifecycle management."""
-    
-    class Meta:
-        verbose_name = "سند حقوقی"
-        verbose_name_plural = "📄 اسناد حقوقی"
-    title = models.CharField(max_length=500, verbose_name='عنوان')
-    reference_no = models.CharField(max_length=100, blank=True, verbose_name='شماره مرجع')
-    doc_type = models.CharField(
-        max_length=20, 
-        choices=DocumentType.choices, 
-        default=DocumentType.LAW,
-        verbose_name='نوع سند'
-    )
-    jurisdiction = models.ForeignKey(
-        Jurisdiction, 
-        on_delete=models.CASCADE, 
-        related_name='documents',
-        verbose_name='حوزه قضایی'
-    )
-    authority = models.ForeignKey(
-        IssuingAuthority, 
-        on_delete=models.CASCADE, 
-        related_name='documents',
-        verbose_name='مرجع صادرکننده'
-    )
-    
-    # Dates
-    enactment_date = models.DateField(null=True, blank=True, verbose_name='تاریخ تصویب')
-    effective_date = models.DateField(null=True, blank=True, verbose_name='تاریخ اجرا')
-    expiry_date = models.DateField(null=True, blank=True, verbose_name='تاریخ انقضا')
-    
-    # Status and workflow
-    status = models.CharField(
-        max_length=20, 
-        choices=DocumentStatus.choices, 
-        default=DocumentStatus.DRAFT,
-        verbose_name='وضعیت'
-    )
-    
-    # Relations
-    subject_terms = models.ManyToManyField(
-        VocabularyTerm, 
-        blank=True, 
-        related_name='documents',
-        verbose_name='موضوعات'
-    )
-    
-    # Workflow users
-    created_by = models.ForeignKey(
-        User, 
-        on_delete=models.CASCADE, 
-        related_name='created_documents',
-        verbose_name='ایجادکننده'
-    )
-    reviewed_by = models.ForeignKey(
-        User, 
-        on_delete=models.SET_NULL, 
-        null=True, 
-        blank=True,
-        related_name='reviewed_documents',
-        verbose_name='بازبین'
-    )
-    approved_by = models.ForeignKey(
-        User, 
-        on_delete=models.SET_NULL, 
-        null=True, 
-        blank=True,
-        related_name='approved_documents',
-        verbose_name='تأییدکننده'
-    )
-    
-    history = HistoricalRecords()
-
-    class Meta:
-        verbose_name = 'سند حقوقی'
-        verbose_name_plural = 'اسناد حقوقی'
-        ordering = ['-created_at']
-
-    def __str__(self):
-        return f"{self.title} ({self.get_doc_type_display()})"
-
-    @property
-    def is_editable(self):
-        """Check if document can be edited."""
-        return self.status in [DocumentStatus.DRAFT, DocumentStatus.UNDER_REVIEW]
-
-    @property
-    def is_approved(self):
-        """Check if document is approved."""
-        return self.status == DocumentStatus.APPROVED
-
-
-class DocumentRelation(BaseModel):
-    """Relations between legal documents."""
-    from_document = models.ForeignKey(
-        LegalDocument, 
-        on_delete=models.CASCADE, 
-        related_name='outgoing_relations',
-        verbose_name='سند مبدأ'
-    )
-    to_document = models.ForeignKey(
-        LegalDocument, 
-        on_delete=models.CASCADE, 
-        related_name='incoming_relations',
-        verbose_name='سند مقصد'
-    )
-    relation_type = models.CharField(
-        max_length=20, 
-        choices=RelationType.choices,
-        verbose_name='نوع رابطه'
-    )
-    
-    history = HistoricalRecords()
-
-    class Meta:
-        verbose_name = 'رابطه اسناد'
-        verbose_name_plural = 'روابط اسناد'
-        unique_together = ['from_document', 'to_document', 'relation_type']
-
-    def __str__(self):
-        return f"{self.from_document.title} {self.get_relation_type_display()} {self.to_document.title}"
-
 
 class LegalUnit(MPTTModel, BaseModel):
     """Hierarchical units within legal documents using MPTT."""
-    # Legacy reference (keep for backward compatibility)
-    document = models.ForeignKey(
-        LegalDocument, 
-        on_delete=models.CASCADE, 
-        related_name='units',
-        verbose_name='سند',
-        null=True,
-        blank=True
-    )
-    
     # New FRBR references
     work = models.ForeignKey(
         'InstrumentWork',
@@ -307,16 +221,11 @@ class LegalUnit(MPTTModel, BaseModel):
     class Meta:
         verbose_name = 'واحد حقوقی'
         verbose_name_plural = 'واحدهای حقوقی'
-        ordering = ['document', 'tree_id', 'lft']
-        constraints = [
-            models.CheckConstraint(
-                check=models.Q(document__isnull=False) | models.Q(work__isnull=False),
-                name='legalunit_has_document_or_work'
-            )
-        ]
+        ordering = ['tree_id', 'lft']
 
     def __str__(self):
-        return f"{self.document.title} - {self.label}"
+        ref = self.work.title_official if self.work else 'بدون مرجع'
+        return f"{ref} - {self.label}"
 
     def save(self, *args, **kwargs):
         # Auto-generate path_label
@@ -328,21 +237,12 @@ class LegalUnit(MPTTModel, BaseModel):
 
     @property
     def is_editable(self):
-        """Check if unit can be edited based on document status."""
-        return self.document.is_editable
+        """Units are editable by default (document model removed)."""
+        return True
 
 
 class FileAsset(BaseModel):
     """File attachments for documents and units."""
-    # Legacy references (keep for backward compatibility)
-    document = models.ForeignKey(
-        LegalDocument, 
-        on_delete=models.CASCADE, 
-        null=True, 
-        blank=True,
-        related_name='files',
-        verbose_name='سند'
-    )
     legal_unit = models.ForeignKey(
         LegalUnit, 
         on_delete=models.CASCADE, 
@@ -383,27 +283,17 @@ class FileAsset(BaseModel):
         verbose_name = 'فایل ضمیمه'
         verbose_name_plural = 'فایل‌های ضمیمه'
         ordering = ['-created_at']
-        constraints = [
-            models.CheckConstraint(
-                check=(
-                    models.Q(document__isnull=False) | 
-                    models.Q(legal_unit__isnull=False) |
-                    models.Q(manifestation__isnull=False)
-                ),
-                name='fileasset_has_reference'
-            )
-        ]
 
     def __str__(self):
         return f"{self.original_filename} ({self.content_type})"
 
     def clean(self):
         from django.core.exceptions import ValidationError
-        refs = [self.document, self.legal_unit, self.manifestation]
+        refs = [self.legal_unit, self.manifestation]
         active_refs = [ref for ref in refs if ref is not None]
         
         if len(active_refs) == 0:
-            raise ValidationError('فایل باید به سند، واحد حقوقی، یا تجلی متصل باشد.')
+            raise ValidationError('فایل باید به واحد حقوقی یا تجلی متصل باشد.')
         if len(active_refs) > 1:
             raise ValidationError('فایل نمی‌تواند همزمان به بیش از یک مرجع متصل باشد.')
 
@@ -755,14 +645,6 @@ class QAEntry(BaseModel):
     )
     
     # Source references
-    source_document = models.ForeignKey(
-        LegalDocument, 
-        on_delete=models.CASCADE, 
-        null=True, 
-        blank=True,
-        related_name='qa_entries',
-        verbose_name='سند مرجع'
-    )
     source_unit = models.ForeignKey(
         LegalUnit, 
         on_delete=models.CASCADE, 

@@ -17,8 +17,7 @@ router.register(r'masterdata/authorities', masterdata_views.IssuingAuthorityView
 router.register(r'masterdata/vocabularies', masterdata_views.VocabularyViewSet)
 router.register(r'masterdata/vocabulary-terms', masterdata_views.VocabularyTermViewSet)
 
-# Documents endpoints
-router.register(r'documents', documents_views.LegalDocumentViewSet)
+# Documents endpoints (FRBR-based)
 router.register(r'units', documents_views.LegalUnitViewSet)
 router.register(r'files', documents_views.FileAssetViewSet)
 router.register(r'qa', documents_views.QAEntryViewSet)

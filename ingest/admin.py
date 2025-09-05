@@ -16,8 +16,9 @@ class CustomAdminSite(AdminSite):
         
         # Custom ordering for apps
         app_order = [
-            'documents',      # 📄 Documents (سیستم اصلی)
-            'masterdata',     # 🗂️ Masterdata  
+            'documents',      # 📄 Documents (اسناد حقوقی)
+            'basedata',       # 📊 Base Data (اطلاعات پایه) - Virtual app
+            'masterdata',     # 🗂️ Masterdata (جداول پایه)
             'auth',           # 🔐 Authentication and Authorization
             'django_celery_beat',  # ⏰ Periodic Tasks
             'syncbridge',     # 🔄 Syncbridge
@@ -28,10 +29,35 @@ class CustomAdminSite(AdminSite):
         # Sort apps according to custom order
         app_list = []
         
-        # Add apps in custom order
         for app_name in app_order:
             if app_name in app_dict:
                 app_list.append(app_dict[app_name])
+            elif app_name == 'basedata':
+                # Create virtual app for "اطلاعات پایه" section
+                virtual_app = {
+                    'name': '📊 اطلاعات پایه',
+                    'app_label': 'basedata',
+                    'app_url': None,
+                    'has_module_perms': True,
+                    'models': []
+                }
+                
+                # Move InstrumentWork, InstrumentExpression, InstrumentManifestation models from documents to basedata section
+                if 'documents' in app_dict:
+                    documents_app = app_dict['documents']
+                    basedata_models = []
+                    remaining_models = []
+                    
+                    for model in documents_app.get('models', []):
+                        if model.get('object_name') in ['InstrumentWork', 'InstrumentExpression', 'InstrumentManifestation']:
+                            basedata_models.append(model)
+                        else:
+                            remaining_models.append(model)
+                    
+                    virtual_app['models'] = basedata_models
+                    documents_app['models'] = remaining_models
+                
+                app_list.append(virtual_app)
         
         # Add any remaining apps not in custom order
         for app_name, app in app_dict.items():
@@ -43,7 +69,7 @@ class CustomAdminSite(AdminSite):
             if app['app_label'] == 'documents':
                 app['name'] = '📄 اسناد حقوقی'
             elif app['app_label'] == 'masterdata':
-                app['name'] = '🗂️ اطلاعات پایه'
+                app['name'] = '🗂️ جداول پایه'
             elif app['app_label'] == 'auth':
                 app['name'] = '🔐 احراز هویت و مجوزها'
             elif app['app_label'] == 'django_celery_beat':
