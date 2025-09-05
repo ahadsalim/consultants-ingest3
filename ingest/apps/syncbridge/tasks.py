@@ -6,7 +6,9 @@ from django.conf import settings
 from django.utils import timezone
 
 from .models import SyncJob, SyncJobStatus, SyncJobType
-from ingest.apps.documents.models import LegalDocument, LegalUnit, QAEntry
+from ingest.apps.documents.models import (
+    InstrumentWork, InstrumentExpression, InstrumentManifestation, LegalUnit, QAEntry
+)
 from ingest.apps.masterdata.models import Jurisdiction, IssuingAuthority, Vocabulary, VocabularyTerm
 from ingest.common.s3 import generate_presigned_url
 
@@ -57,90 +59,71 @@ def build_payload(job_type: str, target_id: str) -> Dict[str, Any]:
         raise ValueError(f"Unknown job type: {job_type}")
 
 
-def build_document_payload(document_id: str) -> Dict[str, Any]:
-    """Build payload for legal document."""
-    doc = LegalDocument.objects.select_related(
-        'jurisdiction', 'authority', 'created_by', 'reviewed_by', 'approved_by'
+def build_document_payload(manifestation_id: str) -> Dict[str, Any]:
+    """Build payload for a manifestation, representing the full document context."""
+    manifestation = InstrumentManifestation.objects.select_related(
+        'expr__work__jurisdiction', 'expr__work__authority', 'expr__lang'
     ).prefetch_related(
-        'subject_terms', 'units', 'files', 'outgoing_relations__to_document'
-    ).get(id=document_id)
+        'expr__work__tags', 'files'
+    ).get(id=manifestation_id)
+    
+    work = manifestation.expr.work
+    expr = manifestation.expr
     
     return {
-        "type": "legal_document",
-        "id": str(doc.id),
-        "title": doc.title,
-        "reference_no": doc.reference_no,
-        "doc_type": doc.doc_type,
+        "type": "document_manifestation",
+        "manifestation_id": str(manifestation.id),
+        "expression_id": str(expr.id),
+        "work_id": str(work.id),
+        
+        # Work details
+        "title_official": work.title_official,
+        "title_short": work.title_short,
+        "work_type": work.work_type,
         "jurisdiction": {
-            "id": str(doc.jurisdiction.id),
-            "name": doc.jurisdiction.name,
-            "code": doc.jurisdiction.code
+            "id": str(work.jurisdiction.id),
+            "name": work.jurisdiction.name,
         },
         "authority": {
-            "id": str(doc.authority.id),
-            "name": doc.authority.name,
-            "code": doc.authority.code
+            "id": str(work.authority.id),
+            "name": work.authority.name,
         },
-        "dates": {
-            "enactment": doc.enactment_date.isoformat() if doc.enactment_date else None,
-            "effective": doc.effective_date.isoformat() if doc.effective_date else None,
-            "expiry": doc.expiry_date.isoformat() if doc.expiry_date else None
-        },
-        "status": doc.status,
-        "subject_terms": [
-            {
-                "id": str(term.id),
-                "term": term.term,
-                "code": term.code,
-                "vocabulary": term.vocabulary.name
-            }
-            for term in doc.subject_terms.all()
-        ],
-        "relations": [
-            {
-                "to_id": str(rel.to_document.id),
-                "relation_type": rel.relation_type
-            }
-            for rel in doc.outgoing_relations.all()
-        ],
-        "units": [
-            {
-                "id": str(unit.id),
-                "label": unit.label,
-                "number": unit.number,
-                "path_label": unit.path_label,
-                "order_index": unit.order_index,
-                "unit_type": unit.unit_type,
-                "content": unit.content,
-                "parent_id": str(unit.parent.id) if unit.parent else None
-            }
-            for unit in doc.units.all()
-        ],
+        "tags": [t.name for t in work.tags.all()],
+        
+        # Expression details
+        "expression_lang": expr.lang.code,
+        "expression_date": expr.expression_date.isoformat() if expr.expression_date else None,
+        
+        # Manifestation details
+        "publication_date": manifestation.publication_date.isoformat() if manifestation.publication_date else None,
+        "official_gazette_name": manifestation.official_gazette_name,
+        "gazette_issue_no": manifestation.gazette_issue_no,
+        "repeal_status": manifestation.repeal_status,
+        "in_force_from": manifestation.in_force_from.isoformat() if manifestation.in_force_from else None,
+        "in_force_to": manifestation.in_force_to.isoformat() if manifestation.in_force_to else None,
+        "source_url": manifestation.source_url,
+        
         "files": [
             {
-                "id": str(file_asset.id),
-                "filename": file_asset.original_filename,
-                "content_type": file_asset.content_type,
-                "size_bytes": file_asset.size_bytes,
-                "sha256": file_asset.sha256,
-                "url": generate_presigned_url(file_asset.bucket, file_asset.object_key, expires_in=3600)
+                "id": str(f.id),
+                "filename": f.original_filename,
+                "content_type": f.content_type,
+                "size_bytes": f.size_bytes,
+                "sha256": f.sha256,
+                "url": generate_presigned_url(f.bucket, f.object_key, expires_in=3600)
             }
-            for file_asset in doc.files.all()
+            for f in manifestation.files.all()
         ],
-        "workflow": {
-            "created_by": doc.created_by.username,
-            "reviewed_by": doc.reviewed_by.username if doc.reviewed_by else None,
-            "approved_by": doc.approved_by.username if doc.approved_by else None,
-            "created_at": doc.created_at.isoformat(),
-            "updated_at": doc.updated_at.isoformat()
-        }
+        
+        "created_at": manifestation.created_at.isoformat(),
+        "updated_at": manifestation.updated_at.isoformat(),
     }
 
 
 def build_qa_payload(qa_id: str) -> Dict[str, Any]:
     """Build payload for QA entry."""
     qa = QAEntry.objects.select_related(
-        'source_document', 'source_unit', 'created_by', 'reviewed_by', 'approved_by'
+        'source_unit', 'created_by', 'reviewed_by', 'approved_by'
     ).prefetch_related('tags').get(id=qa_id)
     
     return {
@@ -159,7 +142,6 @@ def build_qa_payload(qa_id: str) -> Dict[str, Any]:
             for tag in qa.tags.all()
         ],
         "source": {
-            "document_id": str(qa.source_document.id) if qa.source_document else None,
             "unit_id": str(qa.source_unit.id) if qa.source_unit else None
         },
         "workflow": {
@@ -236,12 +218,13 @@ def build_vocabulary_payload(vocabulary_id: str) -> Dict[str, Any]:
 
 def build_unit_payload(unit_id: str) -> Dict[str, Any]:
     """Build payload for legal unit."""
-    unit = LegalUnit.objects.select_related('document', 'parent').get(id=unit_id)
+    unit = LegalUnit.objects.select_related('work', 'expr', 'manifestation', 'parent').get(id=unit_id)
     
     return {
         "type": "legal_unit",
         "id": str(unit.id),
-        "document_id": str(unit.document.id),
+        "work_id": str(unit.work.id) if unit.work else None,
+        "manifestation_id": str(unit.manifestation.id) if unit.manifestation else None,
         "parent_id": str(unit.parent.id) if unit.parent else None,
         "unit_type": unit.unit_type,
         "label": unit.label,
