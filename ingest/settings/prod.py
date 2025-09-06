@@ -42,7 +42,23 @@ EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
 
 # MinIO settings for production
-AWS_S3_USE_SSL = os.getenv('MINIO_USE_SSL', 'True').lower() == 'true'
+AWS_ACCESS_KEY_ID = os.getenv('MINIO_ACCESS_KEY', 'minioadmin')
+AWS_SECRET_ACCESS_KEY = os.getenv('MINIO_SECRET_KEY', 'minioadmin')
+AWS_STORAGE_BUCKET_NAME = os.getenv('MINIO_BUCKET_NAME', 'advisor-docs')
+AWS_S3_ENDPOINT_URL = os.getenv('MINIO_ENDPOINT', 'http://core-minio:9000')
+AWS_S3_USE_SSL = os.getenv('MINIO_USE_SSL', 'False').lower() == 'true'
+AWS_S3_FILE_OVERWRITE = False
+AWS_DEFAULT_ACL = None
+AWS_QUERYSTRING_AUTH = True
+AWS_S3_OBJECT_PARAMETERS = {
+    'CacheControl': 'max-age=86400',
+}
+
+# Use MinIO for file storage by default
+DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
+
+# Public URL for MinIO files (used for generating download links)
+MINIO_STORAGE_MEDIA_URL = f"{AWS_S3_ENDPOINT_URL}/{AWS_STORAGE_BUCKET_NAME}/"
 
 # Logging for production (console only for Docker)
 LOGGING = {

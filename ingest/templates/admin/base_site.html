@@ -1,0 +1,106 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block extrahead %}
+{{ block.super }}
+<style>
+    #header {
+        display: flex !important;
+        align-items: center !important;
+        padding: 10px 20px !important;
+        flex-wrap: wrap !important;
+        position: relative !important;
+    }
+    
+    #branding {
+        flex: 1 !important;
+        text-align: right !important;
+        order: 1 !important;
+    }
+    
+    .company-header {
+        position: absolute !important;
+        left: 50% !important;
+        transform: translateX(-50%) !important;
+        text-align: center !important;
+        order: 2 !important;
+        white-space: nowrap !important;
+    }
+    
+    .company-header .company-name {
+        font-family: 'Vazirmatn', 'Tahoma', sans-serif;
+        font-size: 16px;
+        font-weight: 600;
+        margin: 0;
+        line-height: 1.2;
+    }
+    
+    .company-header .project-name {
+        font-family: 'Vazirmatn', 'Tahoma', sans-serif;
+        font-size: 12px;
+        font-weight: 400;
+        margin: 2px 0 0 0;
+        line-height: 1.2;
+    }
+    
+    .company-header .project-name .highlight {
+        color: #e74c3c;
+        font-weight: 500;
+    }
+    
+    #user-tools {
+        flex: 1 !important;
+        text-align: left !important;
+        order: 3 !important;
+    }
+    
+    @media (max-width: 768px) {
+        #header {
+            flex-direction: column !important;
+            text-align: center !important;
+        }
+        
+        #branding, .company-header, #user-tools {
+            flex: none !important;
+            text-align: center !important;
+            order: unset !important;
+            margin: 5px 0 !important;
+        }
+        
+        .company-header .company-name {
+            font-size: 14px;
+        }
+        
+        .company-header .project-name {
+            font-size: 11px;
+        }
+    }
+    
+    /* Dark theme compatibility */
+    @media (prefers-color-scheme: dark) {
+        .company-header .company-name,
+        .company-header .project-name {
+            color: inherit;
+        }
+    }
+    
+    /* Light theme */
+    @media (prefers-color-scheme: light) {
+        .company-header .company-name {
+            color: #2c3e50;
+        }
+        
+        .company-header .project-name {
+            color: #34495e;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block branding %}
+{{ block.super }}
+<div class="company-header">
+    <div class="company-name">پیشگامان عصر انتقال داده</div>
+    <div class="project-name">پروژه <span class="highlight">ما</span></div>
+</div>
+{% endblock %}

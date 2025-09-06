@@ -4,7 +4,7 @@ from django.utils import timezone
 from datetime import date
 from ingest.apps.documents.models import (
     InstrumentWork, InstrumentExpression, InstrumentManifestation,
-    LegalUnit, Tag, WorkTag, UnitTag, InstrumentRelation
+    LegalUnit, InstrumentRelation
 )
 
 

@@ -50,7 +50,7 @@ class InstrumentWork(BaseModel):
         verbose_name='URN LEX',
         help_text='ir:authority:doc_type:yyyy-mm-dd:number<br>مثال: ir:majlis:law:2020-06-01:123'
     )
-    local_slug = models.SlugField(max_length=100, unique=True, verbose_name='شناسه محلی')
+    local_slug = models.SlugField(max_length=100, unique=True, verbose_name='شناسه محلی', blank=True)
     primary_language = models.ForeignKey(
         'masterdata.Language',
         on_delete=models.SET_NULL,
@@ -94,7 +94,7 @@ class InstrumentExpression(BaseModel):
         default=ConsolidationLevel.BASE,
         verbose_name='سطح تلفیق'
     )
-    expression_date = models.DateField(verbose_name='تاریخ نسخه')
+    expression_date = models.DateField(verbose_name='تاریخ نسخه', null=True, blank=True)
     eli_uri_expr = models.URLField(blank=True, verbose_name='ELI URI بیان')
     
     history = HistoricalRecords()
@@ -124,6 +124,8 @@ class InstrumentManifestation(BaseModel):
         InstrumentExpression,
         on_delete=models.CASCADE,
         related_name='manifestations',
+        null=True,
+        blank=True,
         verbose_name='نسخه سند'
     )
     publication_date = models.DateField(verbose_name='تاریخ انتشار')
@@ -168,23 +170,25 @@ class LegalUnit(MPTTModel, BaseModel):
         'InstrumentWork',
         on_delete=models.CASCADE,
         related_name='units',
-        verbose_name='اثر',
+        verbose_name='سند حقوقی',
         null=True,
-        blank=True
+        blank=True,
+        help_text='مرجع به سند حقوقی اصلی (FRBR Work)'
     )
     expr = models.ForeignKey(
         'InstrumentExpression',
         on_delete=models.CASCADE,
         related_name='units',
-        verbose_name='بیان',
+        verbose_name='نسخه سند',
         null=True,
-        blank=True
+        blank=True,
+        help_text='مرجع به نسخه سند (FRBR Expression)'
     )
     manifestation = models.ForeignKey(
         'InstrumentManifestation',
         on_delete=models.SET_NULL,
         related_name='units',
-        verbose_name='تجلی',
+        verbose_name='انتشار سند',
         null=True,
         blank=True
     )
@@ -211,7 +215,15 @@ class LegalUnit(MPTTModel, BaseModel):
     # New Akoma Ntoso identifiers
     eli_fragment = models.CharField(max_length=200, blank=True, verbose_name='ELI Fragment')
     xml_id = models.CharField(max_length=100, blank=True, verbose_name='XML ID')
-    text_plain = models.TextField(blank=True, verbose_name='متن ساده')
+    
+    # Many-to-many relationship with VocabularyTerm through intermediate model
+    vocabulary_terms = models.ManyToManyField(
+        'masterdata.VocabularyTerm',
+        through='LegalUnitVocabularyTerm',
+        blank=True,
+        related_name='legal_units',
+        verbose_name='برچسب‌ها'
+    )
     
     history = HistoricalRecords(excluded_fields=['lft', 'rght', 'tree_id', 'level'])
 
@@ -219,8 +231,8 @@ class LegalUnit(MPTTModel, BaseModel):
         order_insertion_by = ['order_index']
 
     class Meta:
-        verbose_name = 'واحد حقوقی'
-        verbose_name_plural = 'واحدهای حقوقی'
+        verbose_name = 'جزء سند حقوقی'
+        verbose_name_plural = 'اجزاء سند حقوقی'
         ordering = ['tree_id', 'lft']
 
     def __str__(self):
@@ -243,32 +255,35 @@ class LegalUnit(MPTTModel, BaseModel):
 
 class FileAsset(BaseModel):
     """File attachments for documents and units."""
+    
+    # FRBR references
     legal_unit = models.ForeignKey(
         LegalUnit, 
         on_delete=models.CASCADE, 
         null=True, 
         blank=True,
         related_name='files',
-        verbose_name='واحد حقوقی'
+        verbose_name='جزء سند حقوقی',
+        help_text='مرجع به جزء سند حقوقی'
     )
     
-    # New FRBR reference - files primarily belong to manifestations
     manifestation = models.ForeignKey(
         'InstrumentManifestation',
         on_delete=models.CASCADE,
         null=True,
         blank=True,
         related_name='files',
-        verbose_name='تجلی'
+        verbose_name='انتشار سند',
+        help_text='مرجع به انتشار سند (FRBR Manifestation)'
     )
     
     # File metadata
-    bucket = models.CharField(max_length=100, verbose_name='سطل')
-    object_key = models.CharField(max_length=500, verbose_name='کلید شیء')
-    original_filename = models.CharField(max_length=255, verbose_name='نام فایل اصلی')
-    content_type = models.CharField(max_length=100, verbose_name='نوع محتوا')
-    size_bytes = models.PositiveBigIntegerField(verbose_name='اندازه (بایت)')
-    sha256 = models.CharField(max_length=64, verbose_name='هش SHA256')
+    bucket = models.CharField(max_length=100, verbose_name='سطل', default='advisor-docs')
+    object_key = models.CharField(max_length=500, verbose_name='مسیر فایل', blank=True)
+    original_filename = models.CharField(max_length=255, verbose_name='نام فایل اصلی', blank=True)
+    content_type = models.CharField(max_length=100, verbose_name='نوع فایل', blank=True)
+    size_bytes = models.PositiveBigIntegerField(verbose_name='حجم فایل (بایت)', default=0)
+    sha256 = models.CharField(max_length=64, verbose_name='اثر انگشت فایل', blank=True)
     
     uploaded_by = models.ForeignKey(
         User, 
@@ -293,9 +308,41 @@ class FileAsset(BaseModel):
         active_refs = [ref for ref in refs if ref is not None]
         
         if len(active_refs) == 0:
-            raise ValidationError('فایل باید به واحد حقوقی یا تجلی متصل باشد.')
+            raise ValidationError('فایل باید به جزء سند حقوقی یا انتشار سند متصل باشد.')
         if len(active_refs) > 1:
             raise ValidationError('فایل نمی‌تواند همزمان به بیش از یک مرجع متصل باشد.')
+    
+    def get_file_url(self):
+        """Generate a presigned URL for file access"""
+        if not self.object_key:
+            return None
+        
+        try:
+            import boto3
+            from django.conf import settings
+            from botocore.config import Config
+            
+            # Create MinIO client
+            s3_client = boto3.client(
+                's3',
+                endpoint_url=settings.AWS_S3_ENDPOINT_URL,
+                aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+                aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+                config=Config(signature_version='s3v4'),
+                region_name='us-east-1'
+            )
+            
+            # Generate presigned URL (valid for 1 hour)
+            url = s3_client.generate_presigned_url(
+                'get_object',
+                Params={'Bucket': settings.AWS_STORAGE_BUCKET_NAME, 'Key': self.object_key},
+                ExpiresIn=3600
+            )
+            return url
+        except Exception:
+            # Fallback to direct URL
+            from django.conf import settings
+            return f"{settings.AWS_S3_ENDPOINT_URL}/{settings.AWS_STORAGE_BUCKET_NAME}/{self.object_key}"
 
 
 # Relations and Citations Models
@@ -333,7 +380,7 @@ class InstrumentRelation(BaseModel):
 
     class Meta:
         verbose_name = 'رابطه ابزار حقوقی'
-        verbose_name_plural = 'روابط ابزارهای حقوقی'
+        verbose_name_plural = 'ارتباط اسناد حقوقی'
         unique_together = ['from_work', 'to_work', 'relation_type']
 
     def __str__(self):
@@ -346,13 +393,13 @@ class PinpointCitation(BaseModel):
         'LegalUnit',
         on_delete=models.CASCADE,
         related_name='outgoing_citations',
-        verbose_name='واحد مبدأ'
+        verbose_name='سند مبدأ'
     )
     to_unit = models.ForeignKey(
         'LegalUnit',
         on_delete=models.CASCADE,
         related_name='incoming_citations',
-        verbose_name='واحد مقصد'
+        verbose_name='سند اشاره شده'
     )
     citation_type = models.CharField(
         max_length=20,
@@ -367,8 +414,6 @@ class PinpointCitation(BaseModel):
         verbose_name='نوع ارجاع'
     )
     context_text = models.TextField(blank=True, verbose_name='متن زمینه')
-    start_offset = models.PositiveIntegerField(null=True, blank=True, verbose_name='آفست شروع')
-    end_offset = models.PositiveIntegerField(null=True, blank=True, verbose_name='آفست پایان')
     
     history = HistoricalRecords()
 
@@ -380,113 +425,42 @@ class PinpointCitation(BaseModel):
         return f"{self.from_unit.path_label} → {self.to_unit.path_label}"
 
 
-# Tagging Models
-
-class Tag(BaseModel):
-    """Tags for categorizing works and units."""
-    name = models.CharField(max_length=100, unique=True, verbose_name='نام')
-    slug = models.SlugField(max_length=100, unique=True, verbose_name='نامک')
-    description = models.TextField(blank=True, verbose_name='توضیحات')
-    color = models.CharField(max_length=7, default='#6B7280', verbose_name='رنگ')  # Hex color
-    category = models.CharField(
-        max_length=20,
-        choices=[
-            ('subject', 'موضوعی'),
-            ('procedural', 'رویه‌ای'),
-            ('status', 'وضعیت'),
-            ('priority', 'اولویت'),
-            ('source', 'منبع'),
-            ('custom', 'سفارشی'),
-        ],
-        default='custom',
-        verbose_name='دسته‌بندی'
-    )
-    
-    history = HistoricalRecords()
-
-    class Meta:
-        verbose_name = 'برچسب'
-        verbose_name_plural = 'برچسب‌ها'
-        ordering = ['category', 'name']
-
-    def __str__(self):
-        return self.name
-
-
-class WorkTag(BaseModel):
-    """Many-to-many through model for Work-Tag relationships."""
-    work = models.ForeignKey(
-        'InstrumentWork',
-        on_delete=models.CASCADE,
-        related_name='work_tags',
-        verbose_name='اثر'
-    )
-    tag = models.ForeignKey(
-        'Tag',
-        on_delete=models.CASCADE,
-        related_name='work_tags',
-        verbose_name='برچسب'
-    )
-    relevance_score = models.FloatField(
-        default=1.0,
-        help_text='امتیاز ارتباط (0.0 تا 1.0)',
-        verbose_name='امتیاز ارتباط'
-    )
-    notes = models.TextField(blank=True, verbose_name='یادداشت‌ها')
-    tagged_by = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name='work_taggings',
-        verbose_name='برچسب‌زن'
-    )
-    
-    history = HistoricalRecords()
-
-    class Meta:
-        verbose_name = 'برچسب اثر'
-        verbose_name_plural = 'برچسب‌های اثر'
-        unique_together = ['work', 'tag']
-
-    def __str__(self):
-        return f"{self.work.title_official} - {self.tag.name}"
-
-
-class UnitTag(BaseModel):
-    """Many-to-many through model for Unit-Tag relationships."""
-    unit = models.ForeignKey(
+class LegalUnitVocabularyTerm(BaseModel):
+    """Through model for LegalUnit-VocabularyTerm relationship with weight."""
+    legal_unit = models.ForeignKey(
         'LegalUnit',
         on_delete=models.CASCADE,
-        related_name='unit_tags',
-        verbose_name='واحد'
+        related_name='unit_vocabulary_terms',
+        verbose_name='جزء سند'
     )
-    tag = models.ForeignKey(
-        'Tag',
+    vocabulary_term = models.ForeignKey(
+        'masterdata.VocabularyTerm',
         on_delete=models.CASCADE,
-        related_name='unit_tags',
-        verbose_name='برچسب'
+        related_name='unit_vocabulary_terms',
+        verbose_name='واژه'
     )
-    relevance_score = models.FloatField(
-        default=1.0,
-        help_text='امتیاز ارتباط (0.0 تا 1.0)',
-        verbose_name='امتیاز ارتباط'
-    )
-    notes = models.TextField(blank=True, verbose_name='یادداشت‌ها')
-    tagged_by = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name='unit_taggings',
-        verbose_name='برچسب‌زن'
+    weight = models.PositiveSmallIntegerField(
+        default=5,
+        help_text='وزن ارتباط (1 تا 10)',
+        verbose_name='وزن'
     )
     
     history = HistoricalRecords()
 
     class Meta:
-        verbose_name = 'برچسب واحد'
-        verbose_name_plural = 'برچسب‌های واحد'
-        unique_together = ['unit', 'tag']
+        verbose_name = 'برچسب جزء سند'
+        verbose_name_plural = 'برچسب‌های اجزاء سند'
+        unique_together = ['legal_unit', 'vocabulary_term']
 
     def __str__(self):
-        return f"{self.unit.path_label} - {self.tag.name}"
+        return f"{self.legal_unit.label} - {self.vocabulary_term.term} (وزن: {self.weight})"
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if self.weight < 1 or self.weight > 10:
+            raise ValidationError('وزن باید بین 1 تا 10 باشد.')
+
+
 
 
 # Ingest and RAG Models
@@ -504,7 +478,7 @@ class IngestLog(BaseModel):
         ],
         verbose_name='نوع عملیات'
     )
-    source_system = models.CharField(max_length=50, verbose_name='سیستم مبدأ')
+    source_system = models.CharField(max_length=50, verbose_name='سیستم مبدأ', default='manual')
     source_id = models.CharField(max_length=100, blank=True, verbose_name='شناسه مبدأ')
     
     # Target object references
@@ -555,6 +529,8 @@ class IngestLog(BaseModel):
         User,
         on_delete=models.CASCADE,
         related_name='started_ingests',
+        null=True,
+        blank=True,
         verbose_name='آغازکننده'
     )
     completed_at = models.DateTimeField(null=True, blank=True, verbose_name='زمان تکمیل')
@@ -570,66 +546,59 @@ class IngestLog(BaseModel):
         return f"{self.get_operation_type_display()} - {self.source_system} ({self.get_status_display()})"
 
 
-class RAGChunk(BaseModel):
-    """Text chunks for Retrieval-Augmented Generation."""
-    # Source references
-    source_unit = models.ForeignKey(
+class Chunk(BaseModel):
+    """Text chunks for embedding and retrieval."""
+    expr = models.ForeignKey(
+        'InstrumentExpression',
+        on_delete=models.CASCADE,
+        related_name='chunks',
+        verbose_name='نسخه سند'
+    )
+    unit = models.ForeignKey(
         'LegalUnit',
         on_delete=models.CASCADE,
-        related_name='rag_chunks',
-        verbose_name='واحد مبدأ'
-    )
-    source_manifestation = models.ForeignKey(
-        'InstrumentManifestation',
-        on_delete=models.CASCADE,
-        related_name='rag_chunks',
-        verbose_name='تجلی مبدأ'
+        related_name='chunks',
+        verbose_name='واحد حقوقی'
     )
     
-    # Chunk content
-    chunk_text = models.TextField(verbose_name='متن بخش')
-    chunk_index = models.PositiveIntegerField(verbose_name='شماره بخش')
-    start_offset = models.PositiveIntegerField(verbose_name='آفست شروع')
-    end_offset = models.PositiveIntegerField(verbose_name='آفست پایان')
-    
-    # Embeddings and metadata
-    embedding_model = models.CharField(max_length=100, verbose_name='مدل تعبیه')
-    embedding_vector = models.JSONField(null=True, blank=True, verbose_name='بردار تعبیه')
-    chunk_type = models.CharField(
-        max_length=20,
-        choices=[
-            ('paragraph', 'پاراگراف'),
-            ('sentence', 'جمله'),
-            ('article', 'ماده'),
-            ('section', 'بخش'),
-            ('custom', 'سفارشی'),
-        ],
-        default='paragraph',
-        verbose_name='نوع بخش'
-    )
-    
-    # Quality metrics
+    chunk_text = models.TextField(verbose_name='متن چانک')
     token_count = models.PositiveIntegerField(verbose_name='تعداد توکن')
-    quality_score = models.FloatField(
-        default=1.0,
-        help_text='امتیاز کیفیت (0.0 تا 1.0)',
-        verbose_name='امتیاز کیفیت'
-    )
-    
-    # Processing metadata
-    processed_at = models.DateTimeField(auto_now_add=True, verbose_name='زمان پردازش')
-    processor_version = models.CharField(max_length=50, verbose_name='نسخه پردازشگر')
+    overlap_prev = models.PositiveIntegerField(default=0, verbose_name='همپوشانی با قبلی')
+    citation_payload_json = models.JSONField(verbose_name='اطلاعات ارجاع')
+    hash = models.CharField(max_length=64, verbose_name='هش SHA-256')
     
     history = HistoricalRecords()
 
     class Meta:
-        verbose_name = 'بخش RAG'
-        verbose_name_plural = 'بخش‌های RAG'
-        ordering = ['source_unit', 'chunk_index']
-        unique_together = ['source_unit', 'chunk_index']
+        verbose_name = 'چانک متن'
+        verbose_name_plural = 'چانک‌های متن'
+        ordering = ['expr', 'unit', 'id']
+        unique_together = ['expr', 'hash']
 
     def __str__(self):
-        return f"{self.source_unit.path_label} - بخش {self.chunk_index}"
+        return f"{self.unit.label} - چانک {self.token_count} توکن"
+
+
+class ChunkEmbedding(BaseModel):
+    """Embeddings for text chunks."""
+    chunk = models.ForeignKey(
+        'Chunk',
+        on_delete=models.CASCADE,
+        related_name='embeddings',
+        verbose_name='چانک'
+    )
+    embedding = models.JSONField(verbose_name='بردار تعبیه')  # Will store vector as JSON array
+    model = models.CharField(max_length=100, verbose_name='مدل تعبیه')
+    
+    history = HistoricalRecords()
+
+    class Meta:
+        verbose_name = 'تعبیه چانک'
+        verbose_name_plural = 'تعبیه‌های چانک'
+        ordering = ['chunk', 'created_at']
+
+    def __str__(self):
+        return f"تعبیه {self.chunk} - {self.model}"
 
 
 class QAEntry(BaseModel):

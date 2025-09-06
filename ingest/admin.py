@@ -3,7 +3,7 @@ from django.contrib.admin import AdminSite
 from django.utils.translation import gettext_lazy as _
 
 class CustomAdminSite(AdminSite):
-    site_header = "سیستم مدیریت اسناد حقوقی"
+    site_header = "سیستم مدیریت اسناد"
     site_title = "مدیریت اسناد"
     index_title = "پنل مدیریت"
 
@@ -42,14 +42,14 @@ class CustomAdminSite(AdminSite):
                     'models': []
                 }
                 
-                # Move InstrumentWork, InstrumentExpression, InstrumentManifestation models from documents to basedata section
+                # Move InstrumentWork, InstrumentExpression, InstrumentManifestation, InstrumentRelation models from documents to basedata section
                 if 'documents' in app_dict:
                     documents_app = app_dict['documents']
                     basedata_models = []
                     remaining_models = []
                     
                     for model in documents_app.get('models', []):
-                        if model.get('object_name') in ['InstrumentWork', 'InstrumentExpression', 'InstrumentManifestation']:
+                        if model.get('object_name') in ['InstrumentWork', 'InstrumentExpression', 'InstrumentManifestation', 'InstrumentRelation']:
                             basedata_models.append(model)
                         else:
                             remaining_models.append(model)
